@@ -9,7 +9,7 @@ import torch.nn as nn
 from e3nn import o3
 from e3nn.math import soft_one_hot_linspace
 from e3nn.nn import Gate, Dropout, BatchNorm, FullyConnectedNet
-from e3nn.nn.models.gate_points_2101 import Convolution, smooth_cutoff, tp_path_exists
+# from e3nn.nn.models.gate_points_2101 import Convolution, smooth_cutoff, tp_path_exists
 from e3nn.o3 import FullyConnectedTensorProduct, TensorProduct, Linear
 
 import matplotlib.pyplot as plt
@@ -22,8 +22,8 @@ from e3nn.util.jit import compile_mode
 
 bar_format = '{l_bar}{bar:10}{r_bar}{bar:-10b}'
 # standard formatting for plots
-fontsize = 16
-textsize = 14
+fontsize = 24
+textsize = 16
 sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 plt.rcParams['font.family'] = 'Arial'
 plt.rcParams['axes.linewidth'] = 1
@@ -544,7 +544,7 @@ class Convolution(torch.nn.Module):
         #     self.alpha.output_mask[0] == 1.0
         # ), f"irreps_mid={irreps_mid} and irreps_node_attr={self.irreps_node_attr} are not able to generate scalars"
 
-
+#------------------------- THREE DIFFERENT VERSION OF FORWARD FUNCTION PROVIDED BY E3NN -------------------------#
     # def forward(self, node_input, node_attr, edge_src, edge_dst, edge_attr, edge_scalars) -> torch.Tensor:
     #     weight = self.fc(edge_scalars)
 
@@ -563,6 +563,7 @@ class Convolution(torch.nn.Module):
     #     sin = (1 - m) + sin * m
     #     return cos * node_self_connection + sin * node_conv_out
     
+
     # def forward(self, node_input, node_attr, edge_src, edge_dst, edge_attr, edge_scalars) -> torch.Tensor:
     #     weight = self.fc(edge_scalars)
 
