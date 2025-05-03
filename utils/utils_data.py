@@ -111,7 +111,7 @@ def train_valid_test_split(df, valid_size, test_size, seed=12, plot=False):
             stats = stats.sort_values('crystal_system')
 
             # Create a single plot with side-by-side bars
-            fig, ax = plt.subplots(figsize=(10, 6))
+            fig, ax = plt.subplots(figsize=(10, 6), dpi=1600)
             bar_width = 0.25  # Width of each bar
             index = np.arange(len(crystal_systems))  # Positions for the bars
 
@@ -126,10 +126,9 @@ def train_valid_test_split(df, valid_size, test_size, seed=12, plot=False):
             ax.set_title('Distribution of Crystal Systems in Train/Valid/Test Sets', fontsize=fontsize, pad=15)
             ax.set_xticks(index + bar_width)
             ax.set_xticklabels(stats['crystal_system'], rotation=45, ha='right', fontsize=fontsize)
-            ax.legend(fontsize=fontsize)
+            ax.legend(ncol = 3, fontsize=fontsize)
 
             # Add grid for better readability
-            ax.yaxis.grid(True, linestyle='--', alpha=0.7)
             ax.set_axisbelow(True)
 
             # Dynamically adjust y-axis limit
@@ -900,3 +899,39 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
     fig.savefig(save_path, dpi=300)
 
     plt.show()
+
+
+
+
+def format_chemical_formula(formula):
+    if not formula:
+        return formula
+    result = ''
+    i = 0
+    while i < len(formula):
+        char = formula[i]
+        if char.isalpha():
+            element = char
+            i += 1
+            if i < len(formula) and formula[i].islower():
+                element += formula[i]
+                i += 1
+            result += element
+            number = ''
+            while i < len(formula) and formula[i].isdigit():
+                number += formula[i]
+                i += 1
+            if number:
+                result += f'_{{{number}}}'
+            if i < len(formula) and formula[i] == '^':
+                i += 1
+                superscript = ''
+                while i < len(formula) and (formula[i].isdigit() or formula[i] in ['+', '-']):
+                    superscript += formula[i]
+                    i += 1
+                if superscript:
+                    result += f'^{{{superscript}}}'
+        else:
+            result += char
+            i += 1
+    return result

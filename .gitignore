@@ -4,3 +4,6 @@ block*
 *.torch
 log/
 wandb/
+
+!dataset/symmetrized_dataset.pkl
+!model/symmetrized_data_model_im_250424_for_paper_2_best.torch
