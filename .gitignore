@@ -1,0 +1,6 @@
+block*
+*.pyc
+*.pkl
+*.torch
+log/
+wandb/
