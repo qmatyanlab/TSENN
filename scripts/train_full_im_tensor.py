@@ -66,8 +66,7 @@ print('torch device:' , device)
 
 
 ## load data
-data_file = '../dataset/symmetrized_permittivity_pruned.pkl'
-# data_file = '../dataset/symmetrized_permittivity.pkl'
+data_file = '../dataset/symmetrized_dataset.pkl'
 df, species = load_data(data_file)
 df = df.reset_index(drop=True)
 print('data acquired')
@@ -126,9 +125,8 @@ df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, 
 
 run_time = time.strftime('%y%m%d', time.localtime())
 # # train/valid/test split
-# idx_train, idx_valid, idx_test = train_valid_test_split(df, species, valid_size=.1, test_size=.1, plot=True)
 idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, plot=True)
-# #Save train loss values sets
+# # #Save train loss values sets
 np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
 np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
 np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
@@ -254,7 +252,7 @@ run_name = f'symmetrized_data_model_im_{run_time}'
 opt = torch.optim.AdamW(model.parameters(), lr=7e-3, weight_decay=0.05)
 # scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=0.96)
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min')
-max_iter = 100
+max_iter = 2
 
 # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
 #     opt,
