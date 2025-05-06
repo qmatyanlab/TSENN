@@ -89,7 +89,3 @@ You can explore the pretrained model and visualize its results in the `notebook/
 
 Feel free to cite or fork this repository for your own research.
 
-```
-
-Let me know if you'd like a `Citation`, `License`, or `Results` section added too.
-```
