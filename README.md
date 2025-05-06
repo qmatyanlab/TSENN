@@ -1,5 +1,3 @@
-Of course! Here's the full `README.md` content as raw Markdown source code (you can copy and paste this directly into your `README.md` file):
-
 # StepENN
 
 This repository contains the source code and dataset for the **S**equential **Te**nsorial **P**roperties **E**quivariant **N**eural **N**etwork (**StepENN**).
