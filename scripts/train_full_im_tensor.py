@@ -329,10 +329,6 @@ df['y_pred_sph'] = np.empty((len(df), 0)).tolist()
 model.to(device)
 model.eval()
 
-# weight contribution of each feature
-# weight = torch.abs(model.em_mixing.weight) / (torch.sum(torch.abs(model.em_mixing.weight), dim=1, keepdim=True) + 1e-10)
-# wandb.log({"model_weights": wandb.Histogram(weight.detach().cpu().numpy())})
-# print(weight)
 predictions = [] 
 df['y_pred_sph'] = None
 i0 = 0
@@ -382,8 +378,8 @@ cart_tensors = x.to_cartesian(sph_tensors)
 df['y_pred_cart'] = list(cart_tensors.numpy())  # Convert back to list of NumPy arrays
 
 # Convert to NumPy arrays
-cart_true = np.stack(df[column].values)  # Shape: (num_samples, 201, 3, 3)
-cart_pred = np.stack(df['y_pred_cart'].values)  # Shape: (num_samples, 201, 3, 3)
+cart_true = np.stack(df[column].values)  # Shape: (num_samples, 301, 3, 3)
+cart_pred = np.stack(df['y_pred_cart'].values)  # Shape: (num_samples, 301, 3, 3)
 
 # Convert to PyTorch tensors
 cart_true_tensor = torch.tensor(cart_true, dtype=torch.float64)
@@ -393,8 +389,8 @@ cart_pred_tensor = torch.tensor(cart_pred, dtype=torch.float64)
 mse_torch = torch.mean((cart_pred_tensor - cart_true_tensor) ** 2, dim=(1, 2, 3)).cpu().numpy()
 mae_cart = torch.mean(torch.abs(cart_pred_tensor - cart_true_tensor), dim=(1, 2, 3)).cpu().numpy()
 
-sph_true = np.stack(df['sph_coefs'].values)  # Shape: (num_samples, 201, 3, 3)
-sph_pred = np.stack(df['y_pred_sph'].values)  # Shape: (num_samples, 201, 3, 3)
+sph_true = np.stack(df['sph_coefs'].values)  # Shape: (num_samples, 301, 3, 3)
+sph_pred = np.stack(df['y_pred_sph'].values)  # Shape: (num_samples, 301, 3, 3)
 # Convert to PyTorch tensors
 
 sph_true_tensor = torch.tensor(sph_true, dtype=torch.float64)
@@ -436,11 +432,6 @@ n_samples = 12  # Adjust as needed
 random_idx_train = get_random_sample_indices(idx_train, n_samples)
 random_idx_valid = get_random_sample_indices(idx_valid, n_samples)
 random_idx_test = get_random_sample_indices(idx_test, n_samples)
-# Randomly sample indices for each dataset
-# random_idx_train = get_mse_sample_indices(df, "mse_cart", idx_train, n_samples)
-# random_idx_valid = get_mse_sample_indices(df, "mse_cart", idx_valid, n_samples)
-# random_idx_test = get_mse_sample_indices(df, "mse_cart", idx_test, n_samples)
-
 
 # Use the same indices for both functions
 plot_spherical_harmonics_comparison(df, random_idx_train, column, title_prefix="training_set", n=n_samples)
@@ -463,10 +454,4 @@ wandb.log({
     "Cartesian Tensor - Validation": wandb.Image(f"../pngs/validation_set_cart_spectra.png"),
     "Cartesian Tensor - Testing": wandb.Image(f"../pngs/testing_set_cart_spectra.png"),
 })
-# wandb.log({
-#     "Correlation Per Element": wandb.Image(f"../pngs/{run_name}_correlation_per_element_epsilon.png"),
-#     "Error Distribution": wandb.Image(f"../pngs/{run_name}_error_distribution.png"),
-#     "MSE Cartesian Distribution": wandb.Image(f"../pngs/{run_name}_mse_cart_distribution.png"),
-#     "Absolute Error Density": wandb.Image(f"../pngs/{run_name}_absolute_error_density.png")
-# })
 wandb.finish()
