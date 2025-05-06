@@ -410,16 +410,16 @@ sph_pred_tensor = torch.tensor(sph_pred, dtype=torch.float64)
 
 
 # Store the MSE values in the DataFrame
-df['mse_cart'] = mse_torch
-df['mae_cart'] = mae_cart
+df['mse_cart'] = np.mean(mse_torch, axis=1)
+df['mae_cart'] = np.mean(mae_cart, axis=1)
 mae_sph = torch.mean(torch.abs(sph_pred_tensor - sph_true_tensor), dim=(1, 2)).cpu().numpy() 
 df['mae_sph'] = mae_sph
+
 
 mse_sph_mean = df['mse_sph'].mean()
 mse_sph_std = df['mse_sph'].std()
 mse_cart_mean = df['mse_cart'].mean()
 mse_cart_std = df['mse_cart'].std()
-
 
 mae_sph_mean = df['mae_sph'].mean()
 mae_sph_std = df['mae_sph'].std()
