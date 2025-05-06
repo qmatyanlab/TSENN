@@ -342,16 +342,16 @@ with torch.no_grad():
         out_dim = model.irreps_out.count(o3.Irrep("0e")) 
         
         output_0e = output[:, :irreps_0e]  # Shape: (batch_size, irreps_0e)
-        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5)  # Shape: (batch_size, 201, 5)
+        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5)  # Shape: (batch_size, 301, 5)
 
         y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) 
-        y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  # Shape: (batch_size, 201, 5)
+        y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  # Shape: (batch_size, 301, 5)
 
-        loss_0e = F.mse_loss(output_0e, y_0e)   # MSE or other suitable loss
-        loss_2e = F.mse_loss(output_2e, y_2e)   # MSE or other suitable loss
+        loss_0e = F.mse_loss(output_0e, y_0e)   
+        loss_2e = F.mse_loss(output_2e, y_2e)   
         loss = loss_0e + loss_2e
         
-        combined_output = torch.cat([output_0e.unsqueeze(2), output_2e], dim=2)  # Shape: (batch_size, 201, 6)
+        combined_output = torch.cat([output_0e.unsqueeze(2), output_2e], dim=2)  # Shape: (batch_size, 301, 6)
         predictions.append(combined_output.cpu())
 
         for batch_idx in range(d.y.shape[0]):
@@ -366,14 +366,10 @@ column = 'imag_Permittivity_Matrices_interp'
 
 df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) * scale_data
 
-# perm_cartesian_tensor = x.to_cartesian(sph_coefs_tensor)
-
 # Convert all spherical tensors to a batched tensor
 sph_tensors = torch.tensor(np.stack(df['y_pred_sph'].values))  # Batch process
-
 # Convert using x.to_cartesian in batch
 cart_tensors = x.to_cartesian(sph_tensors)
-
 # Assign back to the DataFrame
 df['y_pred_cart'] = list(cart_tensors.numpy())  # Convert back to list of NumPy arrays
 
@@ -385,9 +381,25 @@ cart_pred = np.stack(df['y_pred_cart'].values)  # Shape: (num_samples, 301, 3, 3
 cart_true_tensor = torch.tensor(cart_true, dtype=torch.float64)
 cart_pred_tensor = torch.tensor(cart_pred, dtype=torch.float64)
 
-# Compute MSE for each row (sample-wise)
-mse_torch = torch.mean((cart_pred_tensor - cart_true_tensor) ** 2, dim=(1, 2, 3)).cpu().numpy()
-mae_cart = torch.mean(torch.abs(cart_pred_tensor - cart_true_tensor), dim=(1, 2, 3)).cpu().numpy()
+# Define upper diagonal indices of symmetric 3x3 tensor
+inds_diag = [(0, 0), (1, 1), (2, 2)]
+inds_off = [(0, 1), (0, 2), (1, 2)]
+
+# Compute symmetric-only MAE and MSE
+def compute_symmetric_errors(pred, true):
+    diffs = []
+    for i, j in inds_diag + inds_off:
+        diff = pred[:, :, i, j] - true[:, :, i, j]  # shape: (N, freq)
+        diffs.append(diff)
+    diffs = torch.stack(diffs, dim=0)  # shape: (6, N, freq)
+    mse = torch.mean(diffs ** 2, dim=0)  # shape: (N, freq)
+    mae = torch.mean(torch.abs(diffs), dim=0)  # shape: (N, freq)
+    return mse, mae
+
+# Compute and assign
+mse_torch, mae_cart = compute_symmetric_errors(cart_pred_tensor, cart_true_tensor)
+mse_torch = mse_torch.cpu().numpy()  # shape: (N, freq)
+mae_cart = mae_cart.cpu().numpy()    # shape: (N, freq)
 
 sph_true = np.stack(df['sph_coefs'].values)  # Shape: (num_samples, 301, 3, 3)
 sph_pred = np.stack(df['y_pred_sph'].values)  # Shape: (num_samples, 301, 3, 3)
@@ -400,7 +412,7 @@ sph_pred_tensor = torch.tensor(sph_pred, dtype=torch.float64)
 # Store the MSE values in the DataFrame
 df['mse_cart'] = mse_torch
 df['mae_cart'] = mae_cart
-mae_sph = torch.mean(torch.abs(sph_pred_tensor - sph_true_tensor), dim=(1, 2)).cpu().numpy()  # Shape: (1454,)
+mae_sph = torch.mean(torch.abs(sph_pred_tensor - sph_true_tensor), dim=(1, 2)).cpu().numpy() 
 df['mae_sph'] = mae_sph
 
 mse_sph_mean = df['mse_sph'].mean()
