@@ -24,6 +24,7 @@ The following key dependencies were used in this project:
 - `torch_scatter==2.1.2+pt20cu117` (plus other torch_geometric dependencies)
 - `pymatgen==2025.2.18`
 - `e3nn==0.5.5`
+
 It is recommended to install `torch` first, followed by `torch_geometric` and its corresponding dependencies for your CUDA version.
 
 ### Other Dependencies
