@@ -1,6 +1,6 @@
 # StepENN
 
-This repository contains the source code and dataset for the **S**equential **Te**nsorial **P**roperties **E**quivariant **N**eural **N**etwork (**StepENN**).
+This repository contains the source code and dataset for the **S**equential-**te**nsorial-**p**roperties **E**quivariant **N**eural **N**etwork (**StepENN**).
 
 ## Table of Contents
 
