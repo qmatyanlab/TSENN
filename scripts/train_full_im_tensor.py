@@ -10,14 +10,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch_geometric as tg
 import torch_scatter
-import e3nn
-from e3nn import o3
 from typing import Dict, Union
 
-# crystal structure data
-from ase import Atom, Atoms
-from ase.neighborlist import neighbor_list
-from ase.visualize.plot import plot_atoms
 palette = ['#43AA8B', '#F8961E', '#F94144']
 sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
@@ -34,7 +28,6 @@ import math
 import e3nn.o3 as o3
 from e3nn.util.jit import compile_mode
 from e3nn.io import CartesianTensor
-from e3nn.o3 import wigner_D, so3_generators
 
 # supress error log from font
 import logging
@@ -44,9 +37,8 @@ import time
 from mendeleev import element
 from tqdm import tqdm
 from utils.utils_data import (load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison)
-from utils.utils_model_full_tensor import Network, train, evaluate
+from utils.utils_model_full_tensor import Network, train
 import wandb
-from sklearn.metrics import r2_score, mean_squared_error
 
 plt.rcParams["mathtext.fontset"] = "cm"
 
@@ -59,18 +51,15 @@ datasets = ['g', 'y', 'r']
 colors = dict(zip(datasets, palette))
 cmap = mpl.colors.LinearSegmentedColormap.from_list('cmap', [palette[k] for k in [0,2,1]])
 
-
 # Check device
 device = "cuda:3" if torch.cuda.is_available() else "cpu"
 print('torch device:' , device)
-
 
 ## load data
 data_file = '../dataset/symmetrized_dataset.pkl'
 df, species = load_data(data_file)
 df = df.reset_index(drop=True)
 print('data acquired')
-
 
 energy_min = 0 #Unit of energy in eV
 energy_max = 30 #Unit of energy in eV
@@ -81,7 +70,7 @@ new_x = np.linspace(energy_min, energy_max, nstep)
 def interpolate_matrix(matrix, omega):
     """Interpolates the full (3001, 3, 3) matrix along the energy axis."""
     interp = interp1d(omega, matrix, kind='linear', axis=0, fill_value=0, bounds_error=False)
-    return interp(new_x)  # Shape: (201, 3, 3)
+    return interp(new_x)  # Shape: (301, 3, 3)
 
 
 # Apply interpolation efficiently
@@ -91,12 +80,11 @@ df['imag_Permittivity_Matrices_interp'] = [
 # Apply the custom function to create a new column
 df['energies_interp'] = df.apply(lambda x: new_x, axis=1)
 
-stack_matrices_tensor = torch.tensor(np.stack(df['imag_Permittivity_Matrices_interp'].values), dtype=torch.float64, device=device)  # Shape: (num_samples, 201, 3, 3)
+stack_matrices_tensor = torch.tensor(np.stack(df['imag_Permittivity_Matrices_interp'].values), dtype=torch.float64, device=device)  # Shape: (num_samples, 301, 3, 3)
 
 # Transform Cartesian tensor to irreps
 x = CartesianTensor("ij=ji")  # Symmetric rank-2 tensor
-sph_coefs_tensor = x.from_cartesian(stack_matrices_tensor)  # Shape: (num_samples, 201, 6)
-
+sph_coefs_tensor = x.from_cartesian(stack_matrices_tensor)  # Shape: (num_samples, 301, 6)
 df['sph_coefs'] = list(sph_coefs_tensor.cpu().numpy())  # Move to CPU and store as list
 
 
@@ -211,7 +199,7 @@ class PeriodicNetwork(Network):
             # output, _ = torch_scatter.scatter_max(output, data.batch, dim=0)  # max over atoms per examples
         return output
 
-out_dim = len(df.iloc[0]['energies_interp'])      # about 200 points
+out_dim = len(df.iloc[0]['energies_interp']) 
 em_dim = 64
 
 
