@@ -89,7 +89,7 @@ You can explore the pretrained model and visualize its results in the `notebook/
 Feel free to cite or fork this repository for your own research.
 ```
 @misc{hsu2025accuratepredictionsequentialtensor,
-      title={Accurate Prediction of Sequential Tensor Properties Using Equivariant Graph Neural Network}, 
+      title={Accurate Prediction of Tensorial Spectra Using Equivariant Graph Neural Network}, 
       author={Ting-Wei Hsu and Zhenyao Fang and Arun Bansil and Qimin Yan},
       year={2025},
       eprint={2505.04862},
