@@ -1,10 +1,10 @@
-# StepENN
+# TSENN
 
 This repository contains the source code and dataset for the **T**ensorial-**S**pectra **E**quivariant **N**eural **N**etwork (**TSENN**).
 
 ## Table of Contents
 
-- [StepENN](#stepenn)
+- [TSENN](#tsenn)
   - [Table of Contents](#table-of-contents)
   - [Install Dependencies](#install-dependencies)
     - [Version-Specific Packages](#version-specific-packages)
