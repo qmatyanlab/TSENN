@@ -18,7 +18,7 @@ import time
 from tqdm import tqdm
 import wandb
 from e3nn.util.jit import compile_mode
-
+import numpy as np 
 
 bar_format = '{l_bar}{bar:10}{r_bar}{bar:-10b}'
 # standard formatting for plots
@@ -77,6 +77,18 @@ class CustomComposeWithDropoutAndBN(torch.nn.Module):
         if x.shape[-1] == x_in.shape[-1]:  # Check if dimensions match (implies same irreps)
             x = x + x_in
         return x
+    
+from e3nn.o3 import Irreps
+
+def to_irreps(x):
+    if x is None:
+        return None
+    if isinstance(x, Irreps):
+        return x
+    if isinstance(x, int):
+        return Irreps(f"{x}x0e")
+    return Irreps(x)  # assume it's a valid string
+
 class Network(torch.nn.Module):
     r"""equivariant neural network
     Parameters
@@ -138,10 +150,13 @@ class Network(torch.nn.Module):
         fc_neurons = [self.number_of_basis, 100]
 
 
-        self.irreps_in = o3.Irreps(irreps_in) if irreps_in is not None else None
+        # self.irreps_in = o3.Irreps(irreps_in) if irreps_in is not None else None
+        self.irreps_in = irreps_in
         self.irreps_hidden = o3.Irreps([(self.mul, (l, p)) for l in range(lmax + 1) for p in [-1, 1]])
         self.irreps_out = o3.Irreps(irreps_out)
-        self.irreps_node_attr = o3.Irreps(irreps_node_attr) if irreps_node_attr is not None else o3.Irreps("0e")
+        # self.irreps_node_attr = o3.Irreps(irreps_node_attr) if irreps_node_attr is not None else o3.Irreps("0e")
+        self.irreps_node_attr = irreps_node_attr
+
         self.irreps_edge_attr = o3.Irreps.spherical_harmonics(lmax)
 
         self.input_has_node_in = (irreps_in is not None)
@@ -276,12 +291,38 @@ class Network(torch.nn.Module):
         else:
             return x
 
+def visualize_layers(model):
+    layer_dst = dict(zip(['sc', 'lin1', 'tp', 'lin2'], ['gate', 'tp', 'lin2', 'gate']))
+    try: layers = model.mp.layers
+    except: layers = model.layers
 
+    num_layers = len(layers)
+    num_ops = max([len([k for k in list(layers[i].first._modules.keys()) if k not in ['fc', 'alpha']])
+                   for i in range(num_layers-1)])
 
-def evaluate(model, dataloader, loss_fn_eval, loss_fn_mae_eval, device):
+    fig, ax = plt.subplots(num_layers, num_ops, figsize=(14,3.5*num_layers))
+    for i in range(num_layers - 1):
+        ops = layers[i].first._modules.copy()
+        ops.pop('fc', None); ops.pop('alpha', None)
+        for j, (k, v) in enumerate(ops.items()):
+            ax[i,j].set_title(k, fontsize=textsize)
+            v.cpu().visualize(ax=ax[i,j])
+            ax[i,j].text(0.7,-0.15,'--> to ' + layer_dst[k], fontsize=textsize-2, transform=ax[i,j].transAxes)
+
+    layer_dst = dict(zip(['sc', 'lin1', 'tp', 'lin2'], ['output', 'tp', 'lin2', 'output']))
+    ops = layers[-1]._modules.copy()
+    ops.pop('fc', None); ops.pop('alpha', None)
+    for j, (k, v) in enumerate(ops.items()):
+        ax[-1,j].set_title(k, fontsize=textsize)
+        v.cpu().visualize(ax=ax[-1,j])
+        ax[-1,j].text(0.7,-0.15,'--> to ' + layer_dst[k], fontsize=textsize-2, transform=ax[-1,j].transAxes)
+
+    fig.subplots_adjust(wspace=0.3, hspace=0.5)
+
+def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device):
     model.eval()
     loss_cumulative = 0.
-    loss_cumulative_mae = 0.
+    loss_cumulative_mse = 0.
     dataloader = [d.to(device) for d in dataloader]
     
     with torch.no_grad():
@@ -289,9 +330,12 @@ def evaluate(model, dataloader, loss_fn_eval, loss_fn_mae_eval, device):
             d = d.to(device)
             output = model(d)
 
-            irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
-            irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
-            out_dim = model.irreps_out.count(o3.Irrep("0e"))
+            # irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
+            # irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
+            # out_dim = model.irreps_out.count(o3.Irrep("0e"))
+            irreps_0e = 300
+            irreps_2e = 1500
+            out_dim = 300
 
             output_0e = output[:, :irreps_0e]
             output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5)
@@ -301,25 +345,29 @@ def evaluate(model, dataloader, loss_fn_eval, loss_fn_mae_eval, device):
 
             loss_0e = loss_fn_eval(output_0e, y_0e)
             loss_2e = loss_fn_eval(output_2e, y_2e)
-            loss_0e_mae = loss_fn_mae_eval(output_0e, y_0e)
-            loss_2e_mae = loss_fn_mae_eval(output_2e, y_2e)
+            loss_0e_mse = loss_fn_mse_eval(output_0e, y_0e)
+            loss_2e_mse = loss_fn_mse_eval(output_2e, y_2e)
 
             loss = loss_0e + loss_2e
-            loss_mae = loss_0e_mae + loss_2e_mae
-
+            loss_mse = loss_0e_mse + loss_2e_mse
+            
             loss_cumulative += loss.item()
-            loss_cumulative_mae += loss_mae.item()
+            loss_cumulative_mse += loss_mse.item()
 
-    return loss_cumulative / len(dataloader), loss_cumulative_mae / len(dataloader)
+    return loss_cumulative / len(dataloader), loss_cumulative_mse / len(dataloader)
 
 
-def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn_mae, loss_fn_eval, loss_fn_mae_eval, run_name, 
-          max_iter=101, scheduler=None, device="cpu"):
+def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn_mse, loss_fn_eval, loss_fn_mse_eval, run_name, 
+          max_iter=101, scheduler=None, device="cpu", disable_tqdm=False, alpha = 1., beta = 50., loss_balancer=None):
     model.to(device)
 
-    irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
-    irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
-    out_dim = model.irreps_out.count(o3.Irrep("0e"))
+    # irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
+    # irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
+    # out_dim = model.irreps_out.count(o3.Irrep("0e"))
+
+    irreps_0e = 300
+    irreps_2e = 1500
+    out_dim = 300
 
     start_time = time.time()
 
@@ -339,9 +387,11 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
     for step in range(max_iter):
         model.train()
         loss_cumulative = 0.
-        loss_cumulative_mae = 0.
+        loss_cumulative_mse = 0.
 
-        for d in tqdm(dataloader_train, total=len(dataloader_train), bar_format="{l_bar}{bar:30}{r_bar}"):
+        # for d in tqdm(dataloader_train, total=len(dataloader_train), bar_format="{l_bar}{bar:30}{r_bar}", disable=disable_tqdm):
+        for batch_idx, d in enumerate(tqdm(dataloader_train, total=len(dataloader_train), 
+                            bar_format="{l_bar}{bar:30}{r_bar}", disable=disable_tqdm)):
             d = d.to(device)
             output = model(d)
 
@@ -353,31 +403,78 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
 
             loss_0e = loss_fn(output_0e, y_0e)
             loss_2e = loss_fn(output_2e, y_2e)
-            loss = loss_0e.mean() + loss_2e.mean()
+            if loss_balancer is not None:
+                loss = loss_balancer(loss_0e.mean(), loss_2e.mean())
+            else:
+                loss = alpha * loss_0e.mean() + beta * loss_2e.mean()
+                
 
-            loss_0e_mae = loss_fn_mae(output_0e, y_0e)
-            loss_2e_mae = loss_fn_mae(output_2e, y_2e)
-            loss_mae = loss_0e_mae.mean() + loss_2e_mae.mean()
-
+            loss_0e_mse = loss_fn_mse(output_0e, y_0e)
+            loss_2e_mse = loss_fn_mse(output_2e, y_2e)
+            loss_mse = loss_0e_mse.mean() + loss_2e_mse.mean()
+             
             loss_cumulative += loss.item()
-            loss_cumulative_mae += loss_mae.item()
+            loss_cumulative_mse += loss_mse.item()
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
+            if step % 4 == 0 and batch_idx == 0:
+                # Select first sample from batch
+                pred_0e = output_0e[0].detach().cpu().numpy()              # shape: (out_dim,)
+                pred_2e = output_2e[0].detach().cpu().numpy().T.reshape(-1)  # shape: (5, out_dim) → (5*out_dim,)
+                pred = np.concatenate([pred_0e, pred_2e])  # shape: (6*out_dim,)
+                # pred = pred_2e
+
+                target_0e = y_0e[0].detach().cpu().numpy()
+                target_2e = y_2e[0].detach().cpu().numpy().T.reshape(-1)
+                # target = target_2e
+                target = np.concatenate([target_0e, target_2e])  # shape: (6*out_dim,)
+
+                fig, ax = plt.subplots(figsize=(10, 8))
+                ax.plot(pred, label='Prediction', alpha=0.9)
+                ax.plot(target, label='Ground Truth', alpha=0.9)
+                ax.set_title(f'Step {step} | Batch {batch_idx}')
+                ax.set_ylabel('Value')
+                ax.legend()
+
+                # === Block boundaries and labels ===
+                block_size = out_dim
+                tick_positions = list(range(0, 6 * block_size, block_size))  # [0, out_dim, 2*out_dim, ...]
+                ax.set_xticks([])
+
+                # Vertical dashed lines between irreps
+                for x in tick_positions[1:]:
+                    ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
+
+                # Centered irrep labels
+                block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
+                # block_labels = [r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
+
+                for i, label in enumerate(block_labels):
+                    center = tick_positions[i] + block_size / 2
+                    ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+                            label, fontsize=24, ha='center', va='top', transform=ax.transData)
+
+                fig.subplots_adjust(bottom=0.15)
+                fig.tight_layout()
+                fig.savefig(f'../pngs/pred_vs_gt_step{step}_batch{batch_idx}.png')
+                plt.close(fig)
+
+
         end_time = time.time()
         wall = end_time - start_time
 
-        valid_avg_loss = evaluate(model, dataloader_valid, loss_fn_eval, loss_fn_mae_eval, device)
-        train_avg_loss = evaluate(model, dataloader_train, loss_fn_eval, loss_fn_mae_eval, device)
+        valid_avg_loss = evaluate(model, dataloader_valid, loss_fn_eval, loss_fn_mse_eval, device)
+        train_avg_loss = evaluate(model, dataloader_train, loss_fn_eval, loss_fn_mse_eval, device)
 
         history.append({
             'step': s0 + step,
             'wall': wall,
             'batch': {
                 'loss': loss.item(),
-                'mean_abs': loss_mae.item(),
+                'mean_abs': loss_mse.item(),
             },
             'valid': {
                 'loss': valid_avg_loss[0],
@@ -394,15 +491,21 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
             'state': model.state_dict()
         }
         current_lr = optimizer.param_groups[0]['lr']
-        wandb.log({
+        log_dict = {
             "train/loss": train_avg_loss[0],
-            "train/mae": train_avg_loss[1],
+            "train/mse": train_avg_loss[1],
             "valid/loss": valid_avg_loss[0],
-            "valid/mae": valid_avg_loss[1],
+            "valid/mse": valid_avg_loss[1],
             "learning_rate": current_lr,
             "step": s0 + step,
-            "wall_time": wall
-        })
+            "wall_time": wall,
+        }
+
+        if loss_balancer is not None:
+            log_dict["loss_weight/0e"] = torch.exp(-2 * loss_balancer.log_sigma_0e).item()
+            log_dict["loss_weight/2e"] = torch.exp(-2 * loss_balancer.log_sigma_2e).item()
+
+        wandb.log(log_dict)
 
         if valid_avg_loss[0] < best_valid_loss:
             best_valid_loss = valid_avg_loss[0]

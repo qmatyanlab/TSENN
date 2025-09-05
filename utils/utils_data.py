@@ -656,6 +656,7 @@ def build_data(entry, column, scale_data, type_onehot, mass_onehot, dipole_oneho
         edge_shift=torch.tensor(edge_shift, dtype=default_dtype),
         edge_vec=edge_vec, edge_len=edge_len,
         y=torch.from_numpy((entry[column])/scale_data).unsqueeze(0),
+        # y = torch.from_numpy(entry[column] / scale_data).T.unsqueeze(0).reshape(1, -1),
         crystal_system_onehot=crystal_system_onehot.unsqueeze(0)  # New global feature
     )
     
