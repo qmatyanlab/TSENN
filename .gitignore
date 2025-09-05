@@ -2,8 +2,9 @@ block*
 *.pyc
 *.pkl
 *.torch
+!*_best.torch
 log/
 wandb/
-
+onehot_data/
 !dataset/symmetrized_dataset.pkl
 !model/symmetrized_data_model_im_250424_for_paper_best.torch
