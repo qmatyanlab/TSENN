@@ -107,7 +107,7 @@ def main_worker(rank, world_size):
         irreps_key=irreps_query,
         irreps_out = irreps_out,
         formula="ij=ji",
-        lmax=0, 
+        lmax=4, 
         max_radius=r_max,
         number_of_basis = number_of_basis,
         num_nodes=n_train.mean(),

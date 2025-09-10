@@ -5,7 +5,7 @@ from torch.nn.modules.loss import _Loss
 from torch_geometric.data import Data
 from torch_cluster import radius_graph
 import torch.nn as nn
-
+import os
 from e3nn import o3
 from e3nn.math import soft_one_hot_linspace
 from e3nn.nn import Gate, Dropout, BatchNorm, FullyConnectedNet
@@ -166,6 +166,8 @@ class Network(torch.nn.Module):
 
         act = {
             1: torch.nn.functional.silu,
+            # 1: torch.nn.functional.relu,
+            # 1: torch.nn.functional.softplus,
             -1: torch.tanh,
         }
         act_gates = {
@@ -247,16 +249,6 @@ class Network(torch.nn.Module):
         return batch, edge_src, edge_dst, edge_vec
 
     def forward(self, data: Union[Data, Dict[str, torch.Tensor]]) -> torch.Tensor:
-        """evaluate the network
-        Parameters
-        ----------
-        data : `torch_geometric.data.Data` or dict
-            data object containing
-            - ``pos`` the position of the nodes (atoms)
-            - ``x`` the input features of the nodes, optional
-            - ``z`` the attributes of the nodes, for instance the atom type, optional
-            - ``batch`` the graph to which the node belong, optional
-        """
         batch, edge_src, edge_dst, edge_vec = self.preprocess(data)
         edge_sh = o3.spherical_harmonics(self.irreps_edge_attr, edge_vec, True, normalization='component')
         edge_length = edge_vec.norm(dim=1)
@@ -286,10 +278,31 @@ class Network(torch.nn.Module):
         for lay in self.layers:
             x = lay(x, z, edge_src, edge_dst, edge_attr, edge_length_embedded)
 
+        # === Apply softplus to 0e outputs only ===
+        x = self._apply_softplus_to_0e(x) # only for new model for the test
+
         if self.reduce_output:
             return scatter(x, batch, dim=0).div(self.num_nodes**0.5)
         else:
             return x
+
+    def _apply_softplus_to_0e(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Apply softplus to all '0e' components of the output tensor.
+        """
+        slices = self.irreps_out.slices()
+        irreps = self.irreps_out
+        out_chunks = []
+
+        for i, (_, ir) in enumerate(irreps):
+            chunk = x[..., slices[i]]
+            if ir == o3.Irrep("0e"):
+                out_chunks.append(torch.nn.functional.softplus(chunk))
+            else:
+                out_chunks.append(chunk)
+
+        return torch.cat(out_chunks, dim=-1)
+
 
 def visualize_layers(model):
     layer_dst = dict(zip(['sc', 'lin1', 'tp', 'lin2'], ['gate', 'tp', 'lin2', 'gate']))
@@ -319,23 +332,27 @@ def visualize_layers(model):
 
     fig.subplots_adjust(wspace=0.3, hspace=0.5)
 
+# def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device, step=None, save_dir=None, save_vis=False, max_vis_samples=None):
 def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device):
+
     model.eval()
     loss_cumulative = 0.
     loss_cumulative_mse = 0.
     dataloader = [d.to(device) for d in dataloader]
-    
-    with torch.no_grad():
-        for d in dataloader:
-            d = d.to(device)
-            output = model(d)
 
-            # irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
-            # irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
-            # out_dim = model.irreps_out.count(o3.Irrep("0e"))
-            irreps_0e = 300
-            irreps_2e = 1500
-            out_dim = 300
+    # Set constants for slicing
+    # irreps_0e = 300
+    # irreps_2e = 1500
+    # out_dim = 300
+    irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
+    irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
+    out_dim = model.irreps_out.count(o3.Irrep("0e"))
+    
+    # os.makedirs(save_dir, exist_ok=True) if save_vis and save_dir is not None else None
+
+    with torch.no_grad():
+        for batch_idx, d in enumerate(dataloader):
+            output = model(d)
 
             output_0e = output[:, :irreps_0e]
             output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5)
@@ -350,9 +367,50 @@ def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device):
 
             loss = loss_0e + loss_2e
             loss_mse = loss_0e_mse + loss_2e_mse
-            
+
             loss_cumulative += loss.item()
             loss_cumulative_mse += loss_mse.item()
+
+            # # === Plot all samples in first batch only ===
+            # if save_vis and batch_idx == 0:
+            #     num_samples = output_0e.shape[0]
+            #     if max_vis_samples is not None:
+            #         num_samples = min(num_samples, max_vis_samples)
+
+            #     for n in range(num_samples):
+            #         pred_0e = output_0e[n].cpu().numpy()
+            #         pred_2e = output_2e[n].cpu().numpy().T.reshape(-1)
+            #         pred = np.concatenate([pred_0e, pred_2e])
+
+            #         target_0e = y_0e[n].cpu().numpy()
+            #         target_2e = y_2e[n].cpu().numpy().T.reshape(-1)
+            #         target = np.concatenate([target_0e, target_2e])
+
+            #         fig, ax = plt.subplots(figsize=(10, 8))
+            #         ax.plot(pred, label='Prediction', alpha=0.9)
+            #         ax.plot(target, label='Ground Truth', alpha=0.9)
+            #         ax.set_title(f'[VALID] Sample {n} | Step {step}')
+            #         ax.set_ylabel('Value')
+            #         ax.legend()
+
+            #         # vertical tick lines
+            #         block_size = out_dim
+            #         tick_positions = list(range(0, 6 * block_size, block_size))
+            #         ax.set_xticks([])
+            #         for x in tick_positions[1:]:
+            #             ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
+
+            #         # spherical harmonic labels
+            #         block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
+            #         for i, label in enumerate(block_labels):
+            #             center = tick_positions[i] + block_size / 2
+            #             ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+            #                     label, fontsize=24, ha='center', va='top', transform=ax.transData)
+
+            #         fig.subplots_adjust(bottom=0.15)
+            #         fig.tight_layout()
+            #         fig.savefig(os.path.join(save_dir, f"valid_sample{n}_step{step}.png"))
+            #         plt.close(fig)
 
     return loss_cumulative / len(dataloader), loss_cumulative_mse / len(dataloader)
 
@@ -361,13 +419,13 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
           max_iter=101, scheduler=None, device="cpu", disable_tqdm=False, alpha = 1., beta = 50., loss_balancer=None):
     model.to(device)
 
-    # irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
-    # irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
-    # out_dim = model.irreps_out.count(o3.Irrep("0e"))
+    irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
+    irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
+    out_dim = model.irreps_out.count(o3.Irrep("0e"))
 
-    irreps_0e = 300
-    irreps_2e = 1500
-    out_dim = 300
+    # irreps_0e = 150
+    # irreps_2e = 150 * 5
+    # out_dim = 150
 
     start_time = time.time()
 
@@ -403,11 +461,21 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
 
             loss_0e = loss_fn(output_0e, y_0e)
             loss_2e = loss_fn(output_2e, y_2e)
+            # Compute MSE per subchannel: shape → (5,)
+            # loss_2e_per_channel = torch.mean((output_2e - y_2e) ** 2, dim=(0, 1))  # over batch and dim
+            # loss_0e_mean = loss_fn(output_0e, y_0e).mean()
+            # # if loss_balancer is not None:
+            # #     loss = loss_balancer(loss_0e.mean(), loss_2e.mean())
+            # # else:
+            # #     loss = alpha * loss_0e.mean() + beta * loss_2e.mean()
+            # if loss_balancer is not None:
+            #     loss = loss_balancer(loss_0e_mean, loss_2e_per_channel)
+            # else:
+            #     loss = alpha * loss_0e_mean + beta * loss_2e_per_channel.sum()
             if loss_balancer is not None:
                 loss = loss_balancer(loss_0e.mean(), loss_2e.mean())
             else:
                 loss = alpha * loss_0e.mean() + beta * loss_2e.mean()
-                
 
             loss_0e_mse = loss_fn_mse(output_0e, y_0e)
             loss_2e_mse = loss_fn_mse(output_2e, y_2e)
@@ -420,53 +488,60 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
             loss.backward()
             optimizer.step()
 
-            if step % 4 == 0 and batch_idx == 0:
-                # Select first sample from batch
-                pred_0e = output_0e[0].detach().cpu().numpy()              # shape: (out_dim,)
-                pred_2e = output_2e[0].detach().cpu().numpy().T.reshape(-1)  # shape: (5, out_dim) → (5*out_dim,)
-                pred = np.concatenate([pred_0e, pred_2e])  # shape: (6*out_dim,)
-                # pred = pred_2e
+            if step % 4 == 0 and batch_idx == 1:
+                batch_size = output_0e.shape[0]
+                for sample_idx in range(1):
+                    pred_0e = output_0e[sample_idx].detach().cpu().numpy()               # (out_dim,)
+                    pred_2e = output_2e[sample_idx].detach().cpu().numpy().T.reshape(-1)  # (5*out_dim,)
+                    pred = np.concatenate([pred_0e, pred_2e])  # shape: (6*out_dim,)
 
-                target_0e = y_0e[0].detach().cpu().numpy()
-                target_2e = y_2e[0].detach().cpu().numpy().T.reshape(-1)
-                # target = target_2e
-                target = np.concatenate([target_0e, target_2e])  # shape: (6*out_dim,)
+                    target_0e = y_0e[sample_idx].detach().cpu().numpy()
+                    target_2e = y_2e[sample_idx].detach().cpu().numpy().T.reshape(-1)
+                    target = np.concatenate([target_0e, target_2e])
 
-                fig, ax = plt.subplots(figsize=(10, 8))
-                ax.plot(pred, label='Prediction', alpha=0.9)
-                ax.plot(target, label='Ground Truth', alpha=0.9)
-                ax.set_title(f'Step {step} | Batch {batch_idx}')
-                ax.set_ylabel('Value')
-                ax.legend()
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    ax.plot(target, label='Ground Truth', alpha=0.9, color = 'black')
+                    ax.plot(pred, label='Prediction', alpha=0.9, color = 'red')
+                    ax.set_title(f'Step {step} | Batch {batch_idx} | Sample {sample_idx}')
+                    ax.set_ylabel('Value')
+                    ax.legend()
 
-                # === Block boundaries and labels ===
-                block_size = out_dim
-                tick_positions = list(range(0, 6 * block_size, block_size))  # [0, out_dim, 2*out_dim, ...]
-                ax.set_xticks([])
+                    # Block boundaries and labels
+                    block_size = out_dim
+                    tick_positions = list(range(0, 6 * block_size, block_size))
+                    ax.set_xticks([])
 
-                # Vertical dashed lines between irreps
-                for x in tick_positions[1:]:
-                    ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
+                    for x in tick_positions[1:]:
+                        ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
 
-                # Centered irrep labels
-                block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
-                # block_labels = [r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
+                    block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
+                    for i, label in enumerate(block_labels):
+                        center = tick_positions[i] + block_size / 2
+                        ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+                                label, fontsize=24, ha='center', va='top', transform=ax.transData)
 
-                for i, label in enumerate(block_labels):
-                    center = tick_positions[i] + block_size / 2
-                    ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
-                            label, fontsize=24, ha='center', va='top', transform=ax.transData)
+                    fig.subplots_adjust(bottom=0.15)
+                    fig.tight_layout()
+                    fig.savefig(f'../pngs/pred_vs_gt_step{step}_batch{batch_idx}_sample{sample_idx}.png')
+                    plt.close(fig)
 
-                fig.subplots_adjust(bottom=0.15)
-                fig.tight_layout()
-                fig.savefig(f'../pngs/pred_vs_gt_step{step}_batch{batch_idx}.png')
-                plt.close(fig)
 
 
         end_time = time.time()
         wall = end_time - start_time
 
         valid_avg_loss = evaluate(model, dataloader_valid, loss_fn_eval, loss_fn_mse_eval, device)
+        # valid_avg_loss = evaluate(
+        #     model, 
+        #     dataloader_valid, 
+        #     loss_fn_eval, 
+        #     loss_fn_mse_eval, 
+        #     device, 
+        #     step=step, 
+        #     save_dir="../pngs_eval", 
+        #     save_vis=(step % 5 == 0), 
+        #     max_vis_samples=16  # optional
+        # )
         train_avg_loss = evaluate(model, dataloader_train, loss_fn_eval, loss_fn_mse_eval, device)
 
         history.append({
@@ -504,6 +579,10 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
         if loss_balancer is not None:
             log_dict["loss_weight/0e"] = torch.exp(-2 * loss_balancer.log_sigma_0e).item()
             log_dict["loss_weight/2e"] = torch.exp(-2 * loss_balancer.log_sigma_2e).item()
+            # # For 2e: log each subchannel
+            # for i in range(loss_balancer.log_sigma_2e.shape[0]):
+            #     weight_2e_i = torch.exp(-2 * loss_balancer.log_sigma_2e[i]).item()
+            #     log_dict[f"loss_weight/2e_m{i - 2}"] = weight_2e_i  # m = -2, -1, 0, 1, 2
 
         wandb.log(log_dict)
 
