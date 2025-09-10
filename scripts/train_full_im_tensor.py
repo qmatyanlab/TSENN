@@ -37,6 +37,12 @@ from utils.utils_data import (load_data, train_valid_test_split, save_or_load_on
 from utils.utils_model_full_tensor import Network, train
 import wandb
 
+from utils.normalize_cart import (
+    compute_norm_params, normalize_with_params, denormalize,
+    cart_to_sph, sph_to_cart, save_norm_params, load_norm_params
+)
+
+
 plt.rcParams["mathtext.fontset"] = "cm"
 
 bar_format = '{l_bar}{bar:10}{r_bar}{bar:-10b}'
@@ -80,29 +86,32 @@ df['rel_permittivity_imag_interp'] = [
 df['energies_interp'] = df.apply(lambda x: new_x, axis=1)
 
 stack_matrices_tensor = torch.tensor(np.stack(df['rel_permittivity_imag_interp'].values), dtype=torch.float64, device=device)  # Shape: (num_samples, 301, 3, 3)
+norm_params = compute_norm_params(stack_matrices_tensor)
+save_norm_params("../model/norm_params.pt", norm_params)
+cart_norm = normalize_with_params(stack_matrices_tensor, norm_params)
+sph_coefs_tensor = cart_to_sph(cart_norm)   
 
-# Transform Cartesian tensor to irreps
-x = CartesianTensor("ij=ji")  # Symmetric rank-2 tensor
-sph_coefs_tensor = x.from_cartesian(stack_matrices_tensor)  # Shape: (num_samples, 301, 6)
+# Save to DataFrame
+df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
 # Separate 0e and 2e parts
-scalar_0e = sph_coefs_tensor[:, :, 0]     # (N, F)
-tensor_2e = sph_coefs_tensor[:, :, 1:]    # (N, F, 5)
+# scalar_0e = sph_coefs_tensor[:, :, 0]     # (N, F)
+# tensor_2e = sph_coefs_tensor[:, :, 1:]    # (N, F, 5)
 
 # === Option 1: Global max normalization (simple, safe) ===
 # scale_0e = torch.max(torch.abs(scalar_0e))                        # scalar
 # scale_2e = torch.max(torch.norm(tensor_2e, dim=-1))               # scalar
 
 # === Option 2: Global median-of-max normalization (robust to outliers) ===
-scale_0e = torch.median(torch.max(torch.abs(scalar_0e), dim=1).values)
-scale_2e = torch.median(torch.max(torch.norm(tensor_2e, dim=-1), dim=1).values)
+# scale_0e = torch.median(torch.max(torch.abs(scalar_0e), dim=1).values)
+# scale_2e = torch.median(torch.max(torch.norm(tensor_2e, dim=-1), dim=1).values)
 # === Normalize ===
-scalar_0e /= (scale_0e + 1e-12)
-tensor_2e /= (scale_2e.unsqueeze(-1) + 1e-12)
-print(scale_0e, scale_2e)
+# scalar_0e /= (scale_0e + 1e-12)
+# tensor_2e /= (scale_2e.unsqueeze(-1) + 1e-12)
+# print(scale_0e, scale_2e)
 # Merge back
-sph_coefs_tensor = torch.cat([scalar_0e.unsqueeze(-1), tensor_2e], dim=-1)  # (N, F, 6)
+# sph_coefs_tensor = torch.cat([scalar_0e.unsqueeze(-1), tensor_2e], dim=-1)  # (N, F, 6)
 # Save to DataFrame
-df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
+# df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
 
 
 type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding = save_or_load_onehot()
@@ -251,8 +260,8 @@ em_dim = 64
 
 use_batch_norm = False
 dropout_prob=0.4
-lr = 5e-3
-lmax = 4
+lr = 1e-2
+lmax = 2
 
 model = NetWrapper(
     in_dim=118,
@@ -284,7 +293,7 @@ trainable_params = sum(param.numel() for param in model.parameters() if param.re
 print(f"Total parameters: {total_params}")
 print(f"Trainable parameters: {trainable_params}")
 
-run_name = f'Revision_{run_time}_Lmax={lmax}_Lr_{lr}_with_individual_b'
+run_name = f'test_{run_time}_Lmax={lmax}_Lr_{lr}_with_individual_b'
 max_iter = 100
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -363,11 +372,11 @@ with torch.no_grad():
         irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
         out_dim = model.irreps_out.count(o3.Irrep("0e")) 
         
-        output_0e = output[:, :irreps_0e] * scale_0e # Shape: (batch_size, irreps_0e)
-        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5) * scale_2e  # Shape: (batch_size, 300, 5)
+        output_0e = output[:, :irreps_0e] #* scale_0e # Shape: (batch_size, irreps_0e)
+        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5) #* scale_2e  # Shape: (batch_size, 300, 5)
 
-        y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) * scale_0e
-        y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  * scale_2e # Shape: (batch_size, 300, 5)
+        y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) #* scale_0e
+        y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5) # * scale_2e # Shape: (batch_size, 300, 5)
 
         loss_0e = F.mse_loss(output_0e, y_0e) 
         loss_2e = F.mse_loss(output_2e, y_2e) 
@@ -389,12 +398,11 @@ column = 'rel_permittivity_imag_interp'
 
 df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) * scale_data
 
-# Convert all spherical tensors to a batched tensor
-sph_tensors = torch.tensor(np.stack(df['y_pred_sph'].values))  # Batch process
-# Convert using x.to_cartesian in batch
-cart_tensors = x.to_cartesian(sph_tensors)
-# Assign back to the DataFrame
-df['y_pred_cart'] = list(cart_tensors.numpy())  # Convert back to list of NumPy arrays
+sph_pred = torch.tensor(np.stack(df['y_pred_sph'].values), device=device)  # (N, F, 6)
+cart_pred_norm = sph_to_cart(sph_pred)
+norm_params_eval = load_norm_params("../model/norm_params.pt", device=device, dtype=torch.float64)
+cart_pred = denormalize(cart_pred_norm, norm_params_eval)
+df['y_pred_cart'] = list(cart_pred.detach().cpu().numpy())
 
 # Convert to NumPy arrays
 cart_true = np.stack(df[column].values)  # Shape: (num_samples, 300, 3, 3)
@@ -426,16 +434,13 @@ mae_cart = mae_cart.cpu().numpy()    # shape: (N, freq)
 
 # sph_true = np.stack(df['sph_coefs'].values)  # Shape: (num_samples, 300, 3, 3)
 sph_true = torch.tensor(np.stack(df['sph_coefs'].values), dtype=torch.float64, device=device)  # (N, F, 6)
-sph_true_denorm = sph_true.clone()
-sph_true_denorm[:, :, 0] *= scale_0e   # 0e component (scalar)
-sph_true_denorm[:, :, 1:] *= scale_2e  # 2e components (5-dim)
+# sph_true_denorm = sph_true.clone()
+# sph_true_denorm[:, :, 0] *= scale_0e   # 0e component (scalar)
+# sph_true_denorm[:, :, 1:] *= scale_2e  # 2e components (5-dim)
 
 sph_pred = np.stack(df['y_pred_sph'].values)  # Shape: (num_samples, 300, 3, 3)
-# Convert to PyTorch tensors
-
 sph_true_tensor = torch.tensor(sph_true, dtype=torch.float64,  device=device)
 sph_pred_tensor = torch.tensor(sph_pred, dtype=torch.float64,  device=device)
-
 
 # Store the MSE values in the DataFrame
 df['mse_cart'] = np.mean(mse_torch, axis=1)
