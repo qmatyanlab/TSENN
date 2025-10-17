@@ -13,7 +13,7 @@ import torch_geometric as tg
 import wandb
 # from utils.utils_model_full_tensor import train
 
-from utils.utils_data import load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison
+from utils.utils_data import load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison, compute_aniso_mae
 from utils.eatgnn_ori import Network, train
 from e3nn.io import CartesianTensor
 import numpy as np
@@ -29,7 +29,7 @@ torch.manual_seed(3407)
 
 def setup(rank, world_size):
     os.environ['MASTER_ADDR'] = 'localhost'
-    os.environ['MASTER_PORT'] = '12355'
+    os.environ['MASTER_PORT'] = '12357'
     dist.init_process_group("nccl", rank=rank, world_size=world_size)
     torch.cuda.set_device(rank)
 
@@ -54,30 +54,42 @@ def main_worker(rank, world_size):
     default_dtype = torch.float64
     torch.set_default_dtype(default_dtype)
     # Load and preprocess data
-    data_file = '../dataset/symmetrized_dataset.pkl'
+    data_file = '../dataset/symmetrized_dataset_with_bandgap.pkl'
     df, species = load_data(data_file)
     df = df.reset_index(drop=True)
 
     energy_min, energy_max, nstep = 0, 30, 300
     new_x = np.linspace(energy_min, energy_max, nstep)
 
-    df['imag_Permittivity_Matrices_interp'] = [
-        interpolate_matrix(row['imag_symmetrized_permittivity'], row['omega'], new_x) for _, row in df.iterrows()
+    df['rel_permittivity_imag_interp'] = [
+        interpolate_matrix(row['rel_permittivity_imag'], row['omega'], new_x) for _, row in df.iterrows()
     ]
     df['energies_interp'] = df.apply(lambda x: new_x, axis=1)
 
-    stack_matrices_tensor = torch.tensor(np.stack(df['imag_Permittivity_Matrices_interp'].values), dtype=default_dtype, device=device)
+    stack_matrices_tensor = torch.tensor(np.stack(df['rel_permittivity_imag_interp'].values), dtype=default_dtype, device=device)
     x = CartesianTensor("ij=ji")
     sph_coefs_tensor = x.from_cartesian(stack_matrices_tensor)
+    scalar_0e = sph_coefs_tensor[:, :, 0]     # (N, F)
+    tensor_2e = sph_coefs_tensor[:, :, 1:]    # (N, F, 5)
+
+    scale_0e = torch.mean(torch.max(torch.abs(scalar_0e), dim=1).values)
+    scale_2e = torch.median(torch.max(torch.norm(tensor_2e, dim=-1), dim=1).values) 
+    # === Normalize ===
+    scalar_0e /= (scale_0e + 1e-12)
+    tensor_2e /= (scale_2e.unsqueeze(-1) + 1e-12)
+    print(scale_0e, scale_2e)
+    # Merge back
+    sph_coefs_tensor = torch.cat([scalar_0e.unsqueeze(-1), tensor_2e], dim=-1)  # (N, F, 6)
+
     df['sph_coefs'] = list(sph_coefs_tensor.cpu().numpy())
 
     type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding = save_or_load_onehot()
-    scale_data = np.median(np.max(np.abs(np.stack(df['sph_coefs'].values)), axis=(1, 2)))
+    scale_data = 1
 
     r_max = 6.
     df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding, r_max), axis=1)
     
-    run_time = '250713'
+    run_time = '250909'
     # idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, plot=False)
     with open('../model/idx_train_'+run_time+'.txt', 'r') as f: idx_train = [int(i.split('\n')[0]) for i in f.readlines()]
     with open('../model/idx_valid_'+run_time+'.txt', 'r') as f: idx_valid = [int(i.split('\n')[0]) for i in f.readlines()]
@@ -93,6 +105,7 @@ def main_worker(rank, world_size):
     INPUT_FEATURE_DIM = 118
     EMBEDDING_DIM = 64
     number_of_basis = 10  # Number of basis functions for the radial basis function expansion
+    lmax = 2
     trial_params = {'irreps_0e': 32,
                     'irreps_1e': 16,
                     'irreps_2e': 8,
@@ -107,7 +120,7 @@ def main_worker(rank, world_size):
         irreps_key=irreps_query,
         irreps_out = irreps_out,
         formula="ij=ji",
-        lmax=4, 
+        lmax=lmax, 
         max_radius=r_max,
         number_of_basis = number_of_basis,
         num_nodes=n_train.mean(),
@@ -153,7 +166,7 @@ def main_worker(rank, world_size):
     loss_fn_eval = torch.nn.L1Loss()
     loss_fn_mse_eval = torch.nn.MSELoss()
     max_iter = 100
-    run_name = 'TOSENN-A_Lmax=0_test'
+    run_name = f'TSENN-A_{run_time}_Lmax_{lmax}'
     if rank == 0:
         total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
         print(f"Total trainable parameters: {total_params}")
@@ -230,11 +243,11 @@ def main_worker(rank, world_size):
                 irreps_2e = 300 * 5
                 out_dim = 300
 
-                output_0e = output[:, :irreps_0e]  # Shape: (batch_size, irreps_0e)
-                output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5)  # Shape: (batch_size, 300, 5)
+                output_0e = output[:, :irreps_0e] * scale_0e# Shape: (batch_size, irreps_0e)
+                output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5) * scale_2e # Shape: (batch_size, 300, 5)
 
-                y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) 
-                y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  # Shape: (batch_size, 300, 5)
+                y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim)  * scale_0e
+                y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  * scale_2e # Shape: (batch_size, 300, 5)
 
                 loss_0e = F.mse_loss(output_0e, y_0e)   
                 loss_2e = F.mse_loss(output_2e, y_2e)   
@@ -251,7 +264,7 @@ def main_worker(rank, world_size):
                 # Update batch index counter
                 i0 += d.y.shape[0]
 
-        column = 'imag_Permittivity_Matrices_interp'
+        column = 'rel_permittivity_imag_interp'
 
         df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) * scale_data
 
@@ -357,7 +370,16 @@ def main_worker(rank, world_size):
         })
 
         wandb.finish()
+        df[["aniso_comp_mae", "aniso_norm_mae"]] = df.apply(compute_aniso_mae, axis=1)
 
+        aniso_mae = df['aniso_norm_mae'].dropna().values
+        threshold = 0.1
+        perc_below = np.mean(aniso_mae < threshold) * 100
+        print(f"Percentage of samples with anisotropy MAE below {threshold}: {perc_below:.2f}%")
+
+        df_test = df.loc[idx_test].copy().reset_index()
+        print(f"mean MAE", df_test['mae_cart'].mean())#, f"median MAE", df_test['mae_cart'].median())
+        print(f"mean Aniso MAE", df_test['aniso_norm_mae'].mean())#, f"median Aniso MAE", df_test['aniso_norm_mae'].median())
     cleanup()
 
 def main():

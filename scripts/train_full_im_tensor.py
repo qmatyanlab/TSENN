@@ -33,7 +33,7 @@ logging.getLogger('matplotlib.font_manager').setLevel(level=logging.CRITICAL)
 # utilities
 import time
 from tqdm import tqdm
-from utils.utils_data import (load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison)
+from utils.utils_data import (load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison, compute_aniso_mae)
 from utils.utils_model_full_tensor import Network, train
 import wandb
 
@@ -55,64 +55,48 @@ colors = dict(zip(datasets, palette))
 cmap = mpl.colors.LinearSegmentedColormap.from_list('cmap', [palette[k] for k in [0,2,1]])
 
 # Check device
-device = "cuda:2" if torch.cuda.is_available() else "cpu"
+device = "cuda:3" if torch.cuda.is_available() else "cpu"
 print('torch device:' , device)
 
 torch.manual_seed(3407)
 
 ## load data
-data_file = '../dataset/symmetrized_dataset.pkl'
+data_file = '../dataset/symmetrized_dataset_with_bandgap.pkl'
 df, species = load_data(data_file)
 df = df.reset_index(drop=True)
 print('data acquired')
 
 energy_min = 0 #Unit of energy in eV
 energy_max = 30 #Unit of energy in eV
-nstep = 150 #Number of the energy points
+nstep = 300 #Number of the energy points (F)
 
 new_x = np.linspace(energy_min, energy_max, nstep)
-# Efficiently interpolate all matrices using list comprehension
 def interpolate_matrix(matrix, omega):
     """Interpolates the full (3001, 3, 3) matrix along the energy axis."""
     interp = interp1d(omega, matrix, kind='linear', axis=0, fill_value=0, bounds_error=False)
-    return interp(new_x)  # Shape: (301, 3, 3)
+    return interp(new_x)  # Shape: (F, 3, 3)
 
-
-# Apply interpolation efficiently
 df['rel_permittivity_imag_interp'] = [
     interpolate_matrix(row['rel_permittivity_imag'], row['omega']) for _, row in df.iterrows()
 ]
-# Apply the custom function to create a new column
 df['energies_interp'] = df.apply(lambda x: new_x, axis=1)
 
-stack_matrices_tensor = torch.tensor(np.stack(df['rel_permittivity_imag_interp'].values), dtype=torch.float64, device=device)  # Shape: (num_samples, 301, 3, 3)
-norm_params = compute_norm_params(stack_matrices_tensor)
-save_norm_params("../model/norm_params.pt", norm_params)
-cart_norm = normalize_with_params(stack_matrices_tensor, norm_params)
-sph_coefs_tensor = cart_to_sph(cart_norm)   
+stack_matrices_tensor = torch.tensor(np.stack(df['rel_permittivity_imag_interp'].values), dtype=torch.float64, device=device)  # Shape: (N, F, 3, 3)
+sph_coefs_tensor = cart_to_sph(stack_matrices_tensor)   
 
-# Save to DataFrame
-df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
 # Separate 0e and 2e parts
-# scalar_0e = sph_coefs_tensor[:, :, 0]     # (N, F)
-# tensor_2e = sph_coefs_tensor[:, :, 1:]    # (N, F, 5)
+scalar_0e = sph_coefs_tensor[:, :, 0]     # (N, F)
+tensor_2e = sph_coefs_tensor[:, :, 1:]    # (N, F, 5)
 
-# === Option 1: Global max normalization (simple, safe) ===
-# scale_0e = torch.max(torch.abs(scalar_0e))                        # scalar
-# scale_2e = torch.max(torch.norm(tensor_2e, dim=-1))               # scalar
-
-# === Option 2: Global median-of-max normalization (robust to outliers) ===
-# scale_0e = torch.median(torch.max(torch.abs(scalar_0e), dim=1).values)
-# scale_2e = torch.median(torch.max(torch.norm(tensor_2e, dim=-1), dim=1).values)
+scale_0e = torch.mean(torch.max(torch.abs(scalar_0e), dim=1).values)
+scale_2e = torch.median(torch.max(torch.norm(tensor_2e, dim=-1), dim=1).values) 
 # === Normalize ===
-# scalar_0e /= (scale_0e + 1e-12)
-# tensor_2e /= (scale_2e.unsqueeze(-1) + 1e-12)
-# print(scale_0e, scale_2e)
+scalar_0e /= (scale_0e + 1e-12)
+tensor_2e /= (scale_2e.unsqueeze(-1) + 1e-12)
+print(scale_0e, scale_2e)
 # Merge back
-# sph_coefs_tensor = torch.cat([scalar_0e.unsqueeze(-1), tensor_2e], dim=-1)  # (N, F, 6)
-# Save to DataFrame
-# df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
-
+sph_coefs_tensor = torch.cat([scalar_0e.unsqueeze(-1), tensor_2e], dim=-1)  # (N, F, 6)
+df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
 
 type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding = save_or_load_onehot()
 
@@ -122,20 +106,18 @@ df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, 
 
 
 # run_time = time.strftime('%y%m%d', time.localtime())
-run_time = '250909'
+run_time = '250424'
 # # train/valid/test split
-# idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, plot=True)
-# # #Save train loss values sets
+# idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, seed=24, plot=True)
 # np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
 # np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
 # np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
-# load train/valid/test indices
 with open('../model/idx_train_'+run_time+'.txt', 'r') as f: idx_train = [int(i.split('\n')[0]) for i in f.readlines()]
 with open('../model/idx_valid_'+run_time+'.txt', 'r') as f: idx_valid = [int(i.split('\n')[0]) for i in f.readlines()]
 with open('../model/idx_test_'+run_time+'.txt', 'r') as f: idx_test = [int(i.split('\n')[0]) for i in f.readlines()]
 
 # format dataloaders
-batch_size = 4
+batch_size = 12
 dataloader_train = tg.loader.DataLoader(df.iloc[idx_train]['data'].values, batch_size=batch_size, shuffle=True)
 dataloader_valid = tg.loader.DataLoader(df.iloc[idx_valid]['data'].values, batch_size=batch_size)
 dataloader_test = tg.loader.DataLoader(df.iloc[idx_test]['data'].values, batch_size=batch_size)
@@ -151,17 +133,6 @@ def get_neighbors(df, idx):
 n_train = get_neighbors(df, idx_train)
 n_valid = get_neighbors(df, idx_valid)
 n_test = get_neighbors(df, idx_test)
-
-class WeightUpdaterBase:
-    def __init__(self, num_tasks, alpha, device):
-        self.num_tasks = num_tasks
-        self.alpha = alpha
-        self.device = device
-        self.weights = torch.nn.Parameter(torch.ones(num_tasks, device=device), requires_grad=True)
-
-    def updateWeights(self, loss_lst, grad_norms, **kwargs):
-        raise NotImplementedError
-
 
 class NetWrapper(Network):
     def __init__(self, in_dim, em_dim, **kwargs):            
@@ -198,79 +169,25 @@ class LearnableUncertaintyLoss(nn.Module):
         weighted = 0.5 * (precision_0e * loss_0e + precision_2e * loss_2e)
         reg = self.log_sigma_0e + self.log_sigma_2e
         return weighted + reg
-# class LearnableUncertaintyLoss(nn.Module):
-#     def __init__(self, n_subchannels_2e=5):
-#         super().__init__()
-#         self.log_sigma_0e = nn.Parameter(torch.tensor(0.0))
-#         self.log_sigma_2e = nn.Parameter(torch.zeros(n_subchannels_2e))  # shape: (5,)
-
-#     def forward(self, loss_0e, loss_2e):
-#         """
-#         loss_0e: scalar loss for 0e (mean-reduced)
-#         loss_2e: tensor of shape (5,) — per subchannel loss
-#         """
-#         precision_0e = torch.exp(-2 * self.log_sigma_0e)
-#         precision_2e = torch.exp(-2 * self.log_sigma_2e)  # shape: (5,)
-
-#         weighted = 0.5 * (
-#             precision_0e * loss_0e +
-#             torch.sum(precision_2e * loss_2e)
-#         )
-#         reg = self.log_sigma_0e + torch.sum(self.log_sigma_2e)
-#         return weighted + reg
-    
-class GradNorm(WeightUpdaterBase):
-    def __init__(self, num_tasks, alpha, lr, weight_decay, device, loss_fn='l1', **kwargs):
-        super().__init__(num_tasks, alpha, device)
-        self.weights_optimizer = torch.optim.AdamW([self.weights], lr=lr, weight_decay=weight_decay)
-        self.collect_grads = True
-
-        # Choose loss function
-        if loss_fn == 'l1':
-            self.loss_fn = lambda x, y: torch.nn.functional.l1_loss(x, y, reduction='mean')
-        elif loss_fn == 'l2':
-            self.loss_fn = lambda x, y: torch.nn.functional.mse_loss(x, y, reduction='mean')
-        elif loss_fn == 'huber':
-            self.loss_fn = torch.nn.HuberLoss(delta=1.0, reduction='mean')
-        else:
-            raise ValueError(f"Unsupported loss function: {loss_fn}")
-
-    def updateWeights(self, loss_lst, grad_norms, **kwargs):
-        self.weights_optimizer.zero_grad()
-
-        loss_ratios = torch.tensor(loss_lst, device=self.device) / loss_lst[0]
-        rate = loss_ratios / loss_ratios.mean()
-        grad_norms = torch.tensor(grad_norms, device=self.device)
-
-        weighted_grad_norms = grad_norms * self.weights
-        mean_norm = weighted_grad_norms.mean()
-        target = mean_norm * rate ** self.alpha
-
-        loss_weights = self.loss_fn(weighted_grad_norms, target.detach())
-        loss_weights.backward()
-        self.weights_optimizer.step()
-
-        with torch.no_grad():
-            self.weights.clamp_(min=1e-3)
-            self.weights[:] = self.num_tasks * self.weights / self.weights.sum()
 
 
 out_dim = len(df.iloc[0]['energies_interp']) 
-em_dim = 64
+em_dim = 128
 
 use_batch_norm = False
 dropout_prob=0.4
 lr = 1e-2
 lmax = 2
-
+layers = 2
+mul = 32
 model = NetWrapper(
     in_dim=118,
     em_dim=em_dim,
     irreps_in=str(em_dim)+"x0e",
     irreps_out=str(out_dim)+"x0e +" + str(out_dim) + "x2e",
     irreps_node_attr=str(em_dim)+"x0e",
-    layers=2,
-    mul=32,
+    layers=layers,
+    mul=mul,
     lmax=lmax,
     max_radius=r_max,
     num_neighbors=n_train.mean(),
@@ -281,11 +198,9 @@ model = NetWrapper(
 
 model.to(device)
 loss_balancer = LearnableUncertaintyLoss().to(device)
-# loss_balancer = GradNorm(num_tasks=6, alpha=1.5, lr=1e-3, weight_decay=0.0, device=device)
+# loss_balancer = None
 opt = torch.optim.AdamW(list(model.parameters()) + list(loss_balancer.parameters()), lr=lr, weight_decay=0.05)
-
-# opt = torch.optim.AdamW(list(model.parameters()) + list(loss_balancer.parameters()), lr=7e-3, weight_decay=0.05)
-# opt = torch.optim.AdamW(list(model.parameters()), lr=7e-3, weight_decay=0.05)
+# opt = torch.optim.AdamW(list(model.parameters()), lr=lr, weight_decay=0.05)
 
 total_params = sum(param.numel() for param in model.parameters())
 trainable_params = sum(param.numel() for param in model.parameters() if param.requires_grad)
@@ -293,7 +208,8 @@ trainable_params = sum(param.numel() for param in model.parameters() if param.re
 print(f"Total parameters: {total_params}")
 print(f"Trainable parameters: {trainable_params}")
 
-run_name = f'test_{run_time}_Lmax={lmax}_Lr_{lr}_with_individual_b'
+# run_name = f'revision_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
+run_name =  f'TSENN-B_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
 max_iter = 100
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
@@ -372,11 +288,11 @@ with torch.no_grad():
         irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
         out_dim = model.irreps_out.count(o3.Irrep("0e")) 
         
-        output_0e = output[:, :irreps_0e] #* scale_0e # Shape: (batch_size, irreps_0e)
-        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5) #* scale_2e  # Shape: (batch_size, 300, 5)
+        output_0e = output[:, :irreps_0e] * scale_0e # Shape: (batch_size, irreps_0e)
+        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5) * scale_2e  # Shape: (batch_size, 300, 5)
 
-        y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) #* scale_0e
-        y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5) # * scale_2e # Shape: (batch_size, 300, 5)
+        y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) * scale_0e
+        y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  * scale_2e # Shape: (batch_size, 300, 5)
 
         loss_0e = F.mse_loss(output_0e, y_0e) 
         loss_2e = F.mse_loss(output_2e, y_2e) 
@@ -396,53 +312,46 @@ with torch.no_grad():
 
 column = 'rel_permittivity_imag_interp'
 
-df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) * scale_data
+df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0])
 
 sph_pred = torch.tensor(np.stack(df['y_pred_sph'].values), device=device)  # (N, F, 6)
-cart_pred_norm = sph_to_cart(sph_pred)
-norm_params_eval = load_norm_params("../model/norm_params.pt", device=device, dtype=torch.float64)
-cart_pred = denormalize(cart_pred_norm, norm_params_eval)
+cart_pred = sph_to_cart(sph_pred)
 df['y_pred_cart'] = list(cart_pred.detach().cpu().numpy())
 
-# Convert to NumPy arrays
-cart_true = np.stack(df[column].values)  # Shape: (num_samples, 300, 3, 3)
-cart_pred = np.stack(df['y_pred_cart'].values)  # Shape: (num_samples, 300, 3, 3)
+cart_true = np.stack(df[column].values)  # Shape: (N, F, 3, 3)
+cart_pred = np.stack(df['y_pred_cart'].values)  # Shape: (N, F, 3, 3)
 
-# Convert to PyTorch tensors
 cart_true_tensor = torch.tensor(cart_true, dtype=torch.float64)
 cart_pred_tensor = torch.tensor(cart_pred, dtype=torch.float64)
 
-# Define upper diagonal indices of symmetric 3x3 tensor
 inds_diag = [(0, 0), (1, 1), (2, 2)]
 inds_off = [(0, 1), (0, 2), (1, 2)]
 
-# Compute symmetric-only MAE and MSE
 def compute_symmetric_errors(pred, true):
     diffs = []
     for i, j in inds_diag + inds_off:
-        diff = pred[:, :, i, j] - true[:, :, i, j]  # shape: (N, freq)
+        diff = pred[:, :, i, j] - true[:, :, i, j]  # shape: (N, F) 
         diffs.append(diff)
-    diffs = torch.stack(diffs, dim=0)  # shape: (6, N, freq)
-    mse = torch.mean(diffs ** 2, dim=0)  # shape: (N, freq)
-    mae = torch.mean(torch.abs(diffs), dim=0)  # shape: (N, freq)
+    diffs = torch.stack(diffs, dim=0)  # shape: (6, N, F)
+    mse = torch.mean(diffs ** 2, dim=0)  # shape: (N, F)
+    mae = torch.mean(torch.abs(diffs), dim=0)  # shape: (N, F)
     return mse, mae
 
 # Compute and assign
 mse_torch, mae_cart = compute_symmetric_errors(cart_pred_tensor, cart_true_tensor)
-mse_torch = mse_torch.cpu().numpy()  # shape: (N, freq)
-mae_cart = mae_cart.cpu().numpy()    # shape: (N, freq)
+mse_torch = mse_torch.cpu().numpy()  # shape: (N, F)
+mae_cart = mae_cart.cpu().numpy()    # shape: (N, F)
 
-# sph_true = np.stack(df['sph_coefs'].values)  # Shape: (num_samples, 300, 3, 3)
+# sph_true = np.stack(df['sph_coefs'].values)  # Shape: (N, F, 3, 3)
 sph_true = torch.tensor(np.stack(df['sph_coefs'].values), dtype=torch.float64, device=device)  # (N, F, 6)
-# sph_true_denorm = sph_true.clone()
-# sph_true_denorm[:, :, 0] *= scale_0e   # 0e component (scalar)
-# sph_true_denorm[:, :, 1:] *= scale_2e  # 2e components (5-dim)
+sph_true_denorm = sph_true.clone()
+sph_true_denorm[:, :, 0] *= scale_0e   # 0e component (scalar)
+sph_true_denorm[:, :, 1:] *= scale_2e  # 2e components (5-dim)
 
-sph_pred = np.stack(df['y_pred_sph'].values)  # Shape: (num_samples, 300, 3, 3)
+sph_pred = np.stack(df['y_pred_sph'].values)  # Shape: (N, F, 3, 3)
 sph_true_tensor = torch.tensor(sph_true, dtype=torch.float64,  device=device)
 sph_pred_tensor = torch.tensor(sph_pred, dtype=torch.float64,  device=device)
 
-# Store the MSE values in the DataFrame
 df['mse_cart'] = np.mean(mse_torch, axis=1)
 df['mae_cart'] = np.mean(mae_cart, axis=1)
 mae_sph = torch.mean(torch.abs(sph_pred_tensor - sph_true_tensor), dim=(1, 2)).cpu().numpy() 
@@ -493,3 +402,15 @@ wandb.log({
     "Cartesian Tensor - Testing": wandb.Image(f"../pngs/testing_set_cart_spectra.png"),
 })
 wandb.finish()
+
+
+df[["aniso_comp_mae", "aniso_norm_mae"]] = df.apply(compute_aniso_mae, axis=1)
+
+aniso_mae = df['aniso_norm_mae'].dropna().values
+threshold = 0.1
+perc_below = np.mean(aniso_mae < threshold) * 100
+print(f"Percentage of samples with anisotropy MAE below {threshold}: {perc_below:.2f}%")
+
+df_test = df.loc[idx_test].copy().reset_index()
+print(f"mean MAE", df_test['mae_cart'].mean())#, f"median MAE", df_test['mae_cart'].median())
+print(f"mean Aniso MAE", df_test['aniso_norm_mae'].mean())#, f"median Aniso MAE", df_test['aniso_norm_mae'].median())

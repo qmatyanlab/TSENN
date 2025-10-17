@@ -36,9 +36,13 @@ logging.getLogger('matplotlib.font_manager').setLevel(level=logging.CRITICAL)
 import time
 from mendeleev import element
 from tqdm import tqdm
-from utils.utils_data import (load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison)
+from utils.utils_data import (load_data, train_valid_test_split, save_or_load_onehot, build_data, plot_spherical_harmonics_comparison, plot_cartesian_tensor_comparison, compute_aniso_mae)
 from utils.utils_model_scalar import Network, train, visualize_layers
 import wandb
+from utils.normalize_cart import (
+    compute_norm_params, normalize_with_params, denormalize,
+    cart_to_sph, sph_to_cart, save_norm_params, load_norm_params
+)
 
 plt.rcParams["mathtext.fontset"] = "cm"
 
@@ -58,7 +62,7 @@ print('torch device:' , device)
 torch.manual_seed(3407)
 
 ## load data
-data_file = '../dataset/symmetrized_dataset.pkl'
+data_file = '../dataset/symmetrized_dataset_with_bandgap.pkl'
 df, species = load_data(data_file)
 df = df.reset_index(drop=True)
 print('data acquired')
@@ -75,19 +79,15 @@ def interpolate_matrix(matrix, omega):
     return interp(new_x)  # Shape: (301, 3, 3)
 
 
-# Apply interpolation efficiently
-df['imag_Permittivity_Matrices_interp'] = [
-    interpolate_matrix(row['imag_symmetrized_permittivity'], row['omega']) for _, row in df.iterrows()
+df['rel_permittivity_imag_interp'] = [
+    interpolate_matrix(row['rel_permittivity_imag'], row['omega']) for _, row in df.iterrows()
 ]
-# Apply the custom function to create a new column
 df['energies_interp'] = df.apply(lambda x: new_x, axis=1)
 
-stack_matrices_tensor = torch.tensor(np.stack(df['imag_Permittivity_Matrices_interp'].values), dtype=torch.float64, device=device)  # Shape: (num_samples, 301, 3, 3)
-
+stack_matrices_tensor = torch.tensor(np.stack(df['rel_permittivity_imag_interp'].values), dtype=torch.float64, device=device)  # Shape: (N, F, 3, 3)
 x = CartesianTensor("ij=ji")  # Symmetric rank-2 tensor
 sph_coefs_tensor = x.from_cartesian(stack_matrices_tensor)  # Shape: (num_samples, 301, 6)
 df['sph_coefs'] = list(sph_coefs_tensor.cpu().numpy())
-
 
 type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding = save_or_load_onehot()
 
@@ -102,14 +102,8 @@ df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, 
 
 
 # run_time = time.strftime('%y%m%d', time.localtime())
-run_time = '250713'
+run_time = '250909'
 
-# # train/valid/test split
-idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, plot=True)
-# # #Save train loss values sets
-np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
-np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
-np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
 # load train/valid/test indices
 with open('../model/idx_train_'+run_time+'.txt', 'r') as f: idx_train = [int(i.split('\n')[0]) for i in f.readlines()]
 with open('../model/idx_valid_'+run_time+'.txt', 'r') as f: idx_valid = [int(i.split('\n')[0]) for i in f.readlines()]
@@ -161,6 +155,10 @@ em_dim = 64
 use_batch_norm = False
 dropout_prob=0.0
 
+layers = 2
+lmax = 4
+mul = 32
+lr = 1e-2
 model = PeriodicNetwork(
     in_dim=118,
     em_dim=em_dim,
@@ -168,9 +166,9 @@ model = PeriodicNetwork(
     # irreps_out=str(out_dim)+"x0e +" + str(out_dim) + "x2e",
     irreps_out = "1800x0e", 
     irreps_node_attr=str(em_dim)+"x0e",
-    layers=2,
-    mul=32,
-    lmax=2,
+    layers=layers,
+    mul=mul,
+    lmax=lmax,
     max_radius=r_max,
     num_neighbors=n_train.mean(),
     reduce_output=True,
@@ -190,20 +188,10 @@ print(f"Trainable parameters: {trainable_params}")
 for name, param in model.named_parameters():
     print(f"{name}: {param.shape} requires_grad={param.requires_grad}")
         
-run_name = f'scalar_model_{run_time}_Lmax=2'
-opt = torch.optim.AdamW(model.parameters(), lr=1e-2, weight_decay=0.05)
-# scheduler = torch.optim.lr_scheduler.ExponentialLR(opt, gamma=0.96)
-# scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, 'min')
+run_name =  f'TSENN-S_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
+opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.05)
 max_iter = 100
 
-# scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-#     opt,
-#     mode='min',
-#     factor=0.5,       # instead of default 0.1
-#     patience=5,      # wait longer before reducing
-#     min_lr=0,
-#     verbose=True
-# )
 scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
     opt,
     T_0=10, T_mult=1,
@@ -281,7 +269,7 @@ with torch.no_grad():
         df.loc[i0:i0 + len(d.y) - 1, 'mse'] = loss
         i0 += len(d.y)
 
-column = 'imag_Permittivity_Matrices_interp'
+column = 'rel_permittivity_imag_interp'
 
 df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) * scale_data
 
@@ -386,3 +374,14 @@ wandb.log({
     "Cartesian Tensor - Testing": wandb.Image(f"../pngs/testing_set_cart_spectra.png"),
 })
 wandb.finish()
+
+df[["aniso_comp_mae", "aniso_norm_mae"]] = df.apply(compute_aniso_mae, axis=1)
+
+aniso_mae = df['aniso_norm_mae'].dropna().values
+threshold = 0.1
+perc_below = np.mean(aniso_mae < threshold) * 100
+print(f"Percentage of samples with anisotropy MAE below {threshold}: {perc_below:.2f}%")
+
+df_test = df.loc[idx_test].copy().reset_index()
+print(f"mean MAE", df_test['mae_cart'].mean())#, f"median MAE", df_test['mae_cart'].median())
+print(f"mean Aniso MAE", df_test['aniso_norm_mae'].mean())#, f"median Aniso MAE", df_test['aniso_norm_mae'].median())

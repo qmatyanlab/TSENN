@@ -39,7 +39,10 @@ from utils.utils_data import (load_data, train_valid_test_split, save_or_load_on
 from utils.utils_model_full_tensor import train
 import wandb
 from utils.eatgnn_ori import Network
-
+from utils.normalize_cart import (
+    compute_norm_params, normalize_with_params, denormalize,
+    cart_to_sph, sph_to_cart, save_norm_params, load_norm_params
+)
 plt.rcParams["mathtext.fontset"] = "cm"
 
 bar_format = '{l_bar}{bar:10}{r_bar}{bar:-10b}'
@@ -52,60 +55,64 @@ colors = dict(zip(datasets, palette))
 cmap = mpl.colors.LinearSegmentedColormap.from_list('cmap', [palette[k] for k in [0,2,1]])
 
 # Check device
-device = "cuda:1" if torch.cuda.is_available() else "cpu"
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 print('torch device:' , device)
 
 ## load data
-data_file = '../dataset/symmetrized_dataset.pkl'
+data_file = '../dataset/symmetrized_dataset_with_bandgap.pkl'
 df, species = load_data(data_file)
 df = df.reset_index(drop=True)
 print('data acquired')
 
 energy_min = 0 #Unit of energy in eV
 energy_max = 30 #Unit of energy in eV
-nstep = 300 #Number of the energy points
+nstep = 300 #Number of the energy points (F)
 
 new_x = np.linspace(energy_min, energy_max, nstep)
-# Efficiently interpolate all matrices using list comprehension
 def interpolate_matrix(matrix, omega):
     """Interpolates the full (3001, 3, 3) matrix along the energy axis."""
     interp = interp1d(omega, matrix, kind='linear', axis=0, fill_value=0, bounds_error=False)
-    return interp(new_x)  # Shape: (301, 3, 3)
+    return interp(new_x)  # Shape: (F, 3, 3)
 
-# Apply interpolation efficiently
-df['imag_Permittivity_Matrices_interp'] = [
-    interpolate_matrix(row['imag_symmetrized_permittivity'], row['omega']) for _, row in df.iterrows()
+df['rel_permittivity_imag_interp'] = [
+    interpolate_matrix(row['rel_permittivity_imag'], row['omega']) for _, row in df.iterrows()
 ]
-# Apply the custom function to create a new column
 df['energies_interp'] = df.apply(lambda x: new_x, axis=1)
 
-stack_matrices_tensor = torch.tensor(np.stack(df['imag_Permittivity_Matrices_interp'].values), dtype=torch.float64, device=device)  # Shape: (num_samples, 301, 3, 3)
+stack_matrices_tensor = torch.tensor(np.stack(df['rel_permittivity_imag_interp'].values), dtype=torch.float64, device=device)  # Shape: (N, F, 3, 3)
+sph_coefs_tensor = cart_to_sph(stack_matrices_tensor)   
 
-# Transform Cartesian tensor to irreps
-x = CartesianTensor("ij=ji")  # Symmetric rank-2 tensor
-sph_coefs_tensor = x.from_cartesian(stack_matrices_tensor)  # Shape: (num_samples, 301, 6)
-df['sph_coefs'] = list(sph_coefs_tensor.cpu().numpy())  # Move to CPU and store as list
+# Separate 0e and 2e parts
+scalar_0e = sph_coefs_tensor[:, :, 0]     # (N, F)
+tensor_2e = sph_coefs_tensor[:, :, 1:]    # (N, F, 5)
+
+scale_0e = torch.mean(torch.max(torch.abs(scalar_0e), dim=1).values)
+scale_2e = torch.median(torch.max(torch.norm(tensor_2e, dim=-1), dim=1).values) 
+# === Normalize ===
+scalar_0e /= (scale_0e + 1e-12)
+tensor_2e /= (scale_2e.unsqueeze(-1) + 1e-12)
+print(scale_0e, scale_2e)
+# Merge back
+sph_coefs_tensor = torch.cat([scalar_0e.unsqueeze(-1), tensor_2e], dim=-1)  # (N, F, 6)
+df["sph_coefs"] = list(sph_coefs_tensor.cpu().numpy())
 
 type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding = save_or_load_onehot()
 
-# Find the scaling value
-tmp = np.array([df.iloc[i]['sph_coefs'] for i in range(len(df))])
-print(tmp.shape)
-scale_data = np.median(np.max(np.abs(tmp), axis=(1, 2)))
-print(scale_data)
+scale_data = 1
 
 
 r_max = 6. # cutoff radius
 df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding, r_max), axis=1)
 
 
-run_time = time.strftime('%y%m%d', time.localtime())
-# # train/valid/test split
-idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, plot=True)
-# # #Save train loss values sets
-np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
-np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
-np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
+run_time = f'250909'
+# run_time = time.strftime('%y%m%d', time.localtime())
+# # # train/valid/test split
+# idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, plot=True)
+# # # #Save train loss values sets
+# np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
+# np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
+# np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
 # load train/valid/test indices
 with open('../model/idx_train_'+run_time+'.txt', 'r') as f: idx_train = [int(i.split('\n')[0]) for i in f.readlines()]
 with open('../model/idx_valid_'+run_time+'.txt', 'r') as f: idx_valid = [int(i.split('\n')[0]) for i in f.readlines()]
@@ -292,14 +299,14 @@ with torch.no_grad():
         irreps_2e = 300 * 5
         out_dim = 300
 
-        output_0e = output[:, :irreps_0e]  # Shape: (batch_size, irreps_0e)
-        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5)  # Shape: (batch_size, 301, 5)
+        output_0e = output[:, :irreps_0e] * scale_0e  # Shape: (batch_size, irreps_0e)
+        output_2e = output[:, irreps_0e:irreps_0e + irreps_2e].contiguous().view(output.shape[0], out_dim, 5) * scale_2e  # Shape: (batch_size, 301, 5)
 
         y_0e = d.y[:, :, 0].view(d.y.shape[0], out_dim) 
         y_2e = d.y[:, :, 1:].view(d.y.shape[0], out_dim, 5)  # Shape: (batch_size, 301, 5)
 
-        loss_0e = F.mse_loss(output_0e, y_0e)   
-        loss_2e = F.mse_loss(output_2e, y_2e)   
+        loss_0e = F.mse_loss(output_0e, y_0e) * scale_0e
+        loss_2e = F.mse_loss(output_2e, y_2e) * scale_2e
         loss = loss_0e + loss_2e
         
         combined_output = torch.cat([output_0e.unsqueeze(2), output_2e], dim=2)  # Shape: (batch_size, 301, 6)
@@ -313,14 +320,13 @@ with torch.no_grad():
         # Update batch index counter
         i0 += d.y.shape[0]
 
-column = 'imag_Permittivity_Matrices_interp'
+column = 'rel_permittivity_imag_interp'
 
-df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) * scale_data
+df['y_pred_sph'] = df['y_pred_sph'].map(lambda x: x[0]) 
 
 # Convert all spherical tensors to a batched tensor
 sph_tensors = torch.tensor(np.stack(df['y_pred_sph'].values))  # Batch process
-# Convert using x.to_cartesian in batch
-cart_tensors = x.to_cartesian(sph_tensors)
+cart_tensors = sph_to_cart(sph_tensors)
 # Assign back to the DataFrame
 df['y_pred_cart'] = list(cart_tensors.numpy())  # Convert back to list of NumPy arrays
 
@@ -417,3 +423,14 @@ wandb.log({
     "Cartesian Tensor - Testing": wandb.Image(f"../pngs/testing_set_cart_spectra.png"),
 })
 wandb.finish()
+
+df[["aniso_comp_mae", "aniso_norm_mae"]] = df.apply(compute_aniso_mae, axis=1)
+
+aniso_mae = df['aniso_norm_mae'].dropna().values
+threshold = 0.1
+perc_below = np.mean(aniso_mae < threshold) * 100
+print(f"Percentage of samples with anisotropy MAE below {threshold}: {perc_below:.2f}%")
+
+df_test = df.loc[idx_test].copy().reset_index()
+print(f"mean MAE", df_test['mae_cart'].mean())#, f"median MAE", df_test['mae_cart'].median())
+print(f"mean Aniso MAE", df_test['aniso_norm_mae'].mean())#, f"median Aniso MAE", df_test['aniso_norm_mae'].median())

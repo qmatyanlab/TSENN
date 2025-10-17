@@ -31,8 +31,8 @@ tqdm.pandas(bar_format=bar_format)
 default_dtype = torch.float64
 
 # standard formatting for plots
-fontsize = 16
-textsize = 14
+fontsize = 12
+textsize = 12
 sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 plt.rcParams['font.family'] = 'Arial'
 plt.rcParams['font.sans-serif'] = ['Helvetica', 'Arial', 'Liberation Sans', 'sans-serif']
@@ -725,8 +725,8 @@ def plot_spherical_harmonics_comparison(df, idx, column_name, title_prefix="", n
                         vmin=vmin, vmax=vmax)
 
             # ax_target.set_title(f"{material_id} {crystal_system}\nTarget", fontsize=10)
-            ax_target.tick_params(axis='x', rotation=0, labelsize=16)  # Ensures x-axis labels are horizontal
-            ax_target.tick_params(axis='y', rotation=0, labelsize=16)  # Ensures y-axis labels are horizontal
+            ax_target.tick_params(axis='x', rotation=0, labelsize=12)  # Ensures x-axis labels are horizontal
+            ax_target.tick_params(axis='y', rotation=0, labelsize=12)  # Ensures y-axis labels are horizontal
 
             # Right: Predicted heatmap
             ax_pred = axes[2 * i + 1]
@@ -735,12 +735,12 @@ def plot_spherical_harmonics_comparison(df, idx, column_name, title_prefix="", n
                         vmin=vmin, vmax=vmax)
 
             # ax_pred.set_title(f"{material_id} {crystal_system}\nPredicted MSE={ds['mse_sph'].iloc[i]:.2e}", fontsize=12)
-            ax_pred.tick_params(axis='x', rotation=0, labelsize=16)  # Ensures x-axis labels are horizontal
-            ax_pred.tick_params(axis='y', rotation=0, labelsize=16)  # Ensures x-axis labels are horizontal
+            ax_pred.tick_params(axis='x', rotation=0, labelsize=12)  # Ensures x-axis labels are horizontal
+            ax_pred.tick_params(axis='y', rotation=0, labelsize=12)  # Ensures x-axis labels are horizontal
 
         # Set x-axis ticks at reasonable intervals
         num_omega = len(omega)
-        tick_indices = np.linspace(0, num_omega - 1, 7, dtype=int)  # 5 integer ticks across the range
+        tick_indices = np.linspace(0, num_omega - 1, 3, dtype=int)  # 5 integer ticks across the range
         tick_labels = [int(round(omega[idx])) for idx in tick_indices]  # Round omega values to integers
 
         for ax in axes[:2 * n]:  # Apply to only used axes
@@ -805,7 +805,7 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
 
     # Define component labels
     xyz_list = ['x', 'y', 'z']
-    tensor_components = [f"$\chi_{{{xyz_list[a]}{xyz_list[b]}}}$" for a in range(3) for b in range(a, 3)]
+    tensor_components = [rf"$\hat\varepsilon_2^{{{xyz_list[a]}{xyz_list[b]}}}$" for a in range(3) for b in range(a, 3)]
 
     # Define subplot grid layout
     n_rows = min(n, 4)  # Limit number of rows to at most 4
@@ -840,17 +840,19 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
             if i == 0:  # Collect legend items only from the first plot
                 handles.append(h)
                 labels.append(tensor_components[idx])
+        if i == 0 or i == 1:
+            ax_real.set_title("Target", fontsize=14, fontweight="bold")   
+
         if column_name =="real_Permittivity_Matrices_interp":
             ax_real.set_ylim((y_min-0.1) * 1.4, y_max * 1.2)
         else:
             ax_real.set_ylim((y_min-0.5) * 1.4, y_max * 1.2)
         ax_real.text(0.95, 0.95, f"${formatted_formula}$ \n {crystal_system}", 
-             transform=ax_real.transAxes, fontsize=16, verticalalignment='top', 
+             transform=ax_real.transAxes, fontsize=12, verticalalignment='top', 
              horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
         # ax_real.text(0.95, 0.95, r"${formatted_formula}$ \n {crystal_system}", transform=ax_real.transAxes, 
         #             fontsize=19, verticalalignment='top', horizontalalignment='right', bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
         ax_real.yaxis.set_major_locator(MaxNLocator(integer=True, nbins=5))
-
         # Right subplot: Predicted permittivity
         ax_pred = axes[2 * i + 1]  # Every odd index is predicted data
         for idx, (a, b) in enumerate([(x, y) for x in range(3) for y in range(x, 3)]):
@@ -859,8 +861,8 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
             ax_pred.set_ylim((y_min-0.1) * 1.4, y_max * 1.2)
         else:
             ax_pred.set_ylim((y_min-0.5) * 1.4, y_max * 1.2)
-        # Format the text with fixed-width numbers and aligned labels
-        # Use a monospace font and ensure consistent spacing
+        if i == 0 or i == 1:
+            ax_pred.set_title("Prediction", fontsize=14, fontweight="bold")
         text_str = (
             f"{'MAE:':<1} {mae_cart:>4.4f}\n"
             # f"{'FME:':<1} {abs_diff_RMS:>4.4f}"
@@ -871,7 +873,7 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
             0.95, 0.95,  # Position in axes coordinates (top-right)
             text_str,
             transform=ax_pred.transAxes,
-            fontsize=13,
+            fontsize=12,
             verticalalignment='top',
             horizontalalignment='right',
             bbox=dict(facecolor='white', alpha=0.6, edgecolor='none')
@@ -883,56 +885,73 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
         ax.set_xticks([])
     
     for ax in axes[-n_cols:]:  
-        ax.set_xticks(np.linspace(omega.min(), omega.max(), 7))
+        ax.set_xticks(np.linspace(omega.min(), omega.max(), 3))
 
     # Add a single, global x-axis label
     # fig.supxlabel("Photon energy (eV)", fontsize=24)
     # fig.supylabel(r"Im $\chi_{ij}(\omega) (F/m)$", fontsize=24)
 
     # Add a single legend outside the figure
-    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.01), ncol=6, fontsize=22, frameon=False)
+    fig.legend(handles, labels, loc="lower center", bbox_to_anchor=(0.5, 0.0), ncol=6, fontsize=22, frameon=False)
     
     plt.tight_layout(rect=[0, 0.05, 1, 1])  # Adjust layout
     plt.subplots_adjust(wspace=0.2, hspace=0.1)  
 
     os.makedirs("../pngs", exist_ok=True)
-    save_path = f"../pngs/{title_prefix}_cart_spectra.png"
-    fig.savefig(save_path, dpi=300)
+    save_path = f"../pngs/{title_prefix}_cart_spectra.pdf"
+    fig.savefig(save_path, dpi=500)
 
     plt.show()
 
 
+def decompose_tensor_seq(tensor_seq):
+    iso_parts = []
+    aniso_parts = []
+    for tensor in tensor_seq:
+        iso, aniso = decompose_tensor((tensor + tensor.T.conj()) / 2)
+        iso_parts.append(iso)
+        aniso_parts.append(aniso)
+    return np.array(iso_parts), np.array(aniso_parts)
 
+def decompose_tensor(tensor):
+    """
+    Input: tensor of shape (3, 3)
+    Returns: (iso_part, aniso_part), both (3, 3)
+    """
+    iso_scalar = np.trace(tensor) / 3
+    iso_part = iso_scalar * np.eye(3)
+    aniso_part = tensor - iso_part
+    return iso_part, aniso_part
 
-def format_chemical_formula(formula):
-    if not formula:
-        return formula
-    result = ''
-    i = 0
-    while i < len(formula):
-        char = formula[i]
-        if char.isalpha():
-            element = char
-            i += 1
-            if i < len(formula) and formula[i].islower():
-                element += formula[i]
-                i += 1
-            result += element
-            number = ''
-            while i < len(formula) and formula[i].isdigit():
-                number += formula[i]
-                i += 1
-            if number:
-                result += f'_{{{number}}}'
-            if i < len(formula) and formula[i] == '^':
-                i += 1
-                superscript = ''
-                while i < len(formula) and (formula[i].isdigit() or formula[i] in ['+', '-']):
-                    superscript += formula[i]
-                    i += 1
-                if superscript:
-                    result += f'^{{{superscript}}}'
-        else:
-            result += char
-            i += 1
-    return result
+def anisotropy_strength(aniso_seq):
+    return np.linalg.norm(aniso_seq, axis=(1,2))  # [n_freq]
+
+def compute_aniso_mae(row):
+    true_tensor = row["rel_permittivity_imag_interp"]  # shape (N_ω, 3, 3)
+    pred_tensor = row["y_pred_cart"]
+
+    # Decompose into isotropic + anisotropic parts
+    true_iso, true_aniso = decompose_tensor_seq(true_tensor)
+    pred_iso, pred_aniso = decompose_tensor_seq(pred_tensor)
+
+    # --- (1) Component-wise anisotropic MAE ---
+    # flatten component-wise tensors across all ω
+    comp_diff = np.abs(true_aniso - pred_aniso)  # shape (N_ω, 3, 3)
+    triu_idx = np.triu_indices(3)
+    comp_diff_unique = comp_diff[:, triu_idx[0], triu_idx[1]]
+    comp_mae = np.mean(comp_diff_unique[np.isfinite(comp_diff_unique)])
+
+    # --- (2) Anisotropy strength MAE ---
+    true_norm = anisotropy_strength(true_aniso)  # (N_ω,)
+    pred_norm = anisotropy_strength(pred_aniso)  # (N_ω,)
+
+    mask = np.isfinite(true_norm) & np.isfinite(pred_norm)
+    if np.sum(mask) == 0:
+        return pd.Series({"aniso_comp_mae": np.nan, "aniso_norm_mae": np.nan})
+
+    norm_mae = np.mean(np.abs(true_norm[mask] - pred_norm[mask]))
+
+    return pd.Series({
+        "aniso_comp_mae": comp_mae,
+        "aniso_norm_mae": norm_mae
+    })
