@@ -106,7 +106,7 @@ df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, 
 
 
 # run_time = time.strftime('%y%m%d', time.localtime())
-run_time = '250424'
+run_time = '250922'
 # # train/valid/test split
 # idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, seed=24, plot=True)
 # np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
@@ -209,8 +209,8 @@ print(f"Total parameters: {total_params}")
 print(f"Trainable parameters: {trainable_params}")
 
 # run_name = f'revision_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
-run_name =  f'TSENN-B_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
-max_iter = 100
+run_name =  f'unconverged_TSENN-B_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
+max_iter = 7
 
 scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
     opt,

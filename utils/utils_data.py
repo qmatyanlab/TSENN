@@ -898,7 +898,7 @@ def plot_cartesian_tensor_comparison(df, idx, column_name, title_prefix="", n=3)
     plt.subplots_adjust(wspace=0.2, hspace=0.1)  
 
     os.makedirs("../pngs", exist_ok=True)
-    save_path = f"../pngs/{title_prefix}_cart_spectra.pdf"
+    save_path = f"../pngs/{title_prefix}_cart_spectra.png"
     fig.savefig(save_path, dpi=500)
 
     plt.show()
