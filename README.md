@@ -59,8 +59,8 @@ Each entry in the dataset corresponds to a material and includes:
 * `band gap`
 * `crystal system`
 * `photon energy (omega)`
-* `real part of permittivity`
-* `imaginary part of permittivity`
+* `real part of dielectric tensor`
+* `imaginary part of dielectric tensor`
 
 The permittivity data is stored as a NumPy array of shape `(3001, 3, 3)`,
 where `3001` corresponds to the number of photon energy points.
