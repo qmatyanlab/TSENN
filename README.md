@@ -19,10 +19,10 @@ This repository contains the source code and dataset for the **T**ensorial-**S**
 
 The following key dependencies were used in this project:
 - `python==3.11.7`
-- `torch==2.0.1+cu117`
-- `torch_geometric==2.4.0`
-- `torch_scatter==2.1.2+pt20cu117` (plus other torch_geometric dependencies)
-- `pymatgen==2025.2.18`
+- `torch==2.3.1+cu121`
+- `torch_geometric==2.5.3`
+- `torch_scatter==2.1.2+pt23cu121` (plus other torch_geometric dependencies)
+- `pymatgen==2025.1.24`
 - `e3nn==0.5.5`
 
 It is recommended to install `torch` first, followed by `torch_geometric` and its corresponding dependencies for your CUDA version.
