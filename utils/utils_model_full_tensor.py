@@ -332,7 +332,6 @@ def visualize_layers(model):
 
     fig.subplots_adjust(wspace=0.3, hspace=0.5)
 
-# def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device, step=None, save_dir=None, save_vis=False, max_vis_samples=None):
 def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device):
 
     model.eval()
@@ -371,47 +370,6 @@ def evaluate(model, dataloader, loss_fn_eval, loss_fn_mse_eval, device):
             loss_cumulative += loss.item()
             loss_cumulative_mse += loss_mse.item()
 
-            # # === Plot all samples in first batch only ===
-            # if save_vis and batch_idx == 0:
-            #     num_samples = output_0e.shape[0]
-            #     if max_vis_samples is not None:
-            #         num_samples = min(num_samples, max_vis_samples)
-
-            #     for n in range(num_samples):
-            #         pred_0e = output_0e[n].cpu().numpy()
-            #         pred_2e = output_2e[n].cpu().numpy().T.reshape(-1)
-            #         pred = np.concatenate([pred_0e, pred_2e])
-
-            #         target_0e = y_0e[n].cpu().numpy()
-            #         target_2e = y_2e[n].cpu().numpy().T.reshape(-1)
-            #         target = np.concatenate([target_0e, target_2e])
-
-            #         fig, ax = plt.subplots(figsize=(10, 8))
-            #         ax.plot(pred, label='Prediction', alpha=0.9)
-            #         ax.plot(target, label='Ground Truth', alpha=0.9)
-            #         ax.set_title(f'[VALID] Sample {n} | Step {step}')
-            #         ax.set_ylabel('Value')
-            #         ax.legend()
-
-            #         # vertical tick lines
-            #         block_size = out_dim
-            #         tick_positions = list(range(0, 6 * block_size, block_size))
-            #         ax.set_xticks([])
-            #         for x in tick_positions[1:]:
-            #             ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
-
-            #         # spherical harmonic labels
-            #         block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
-            #         for i, label in enumerate(block_labels):
-            #             center = tick_positions[i] + block_size / 2
-            #             ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
-            #                     label, fontsize=24, ha='center', va='top', transform=ax.transData)
-
-            #         fig.subplots_adjust(bottom=0.15)
-            #         fig.tight_layout()
-            #         fig.savefig(os.path.join(save_dir, f"valid_sample{n}_step{step}.png"))
-            #         plt.close(fig)
-
     return loss_cumulative / len(dataloader), loss_cumulative_mse / len(dataloader)
 
 
@@ -422,10 +380,6 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
     irreps_0e = model.irreps_out.count(o3.Irrep("0e"))
     irreps_2e = model.irreps_out.count(o3.Irrep("2e")) * 5
     out_dim = model.irreps_out.count(o3.Irrep("0e"))
-
-    # irreps_0e = 150
-    # irreps_2e = 150 * 5
-    # out_dim = 150
 
     start_time = time.time()
 
@@ -488,42 +442,42 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
             loss.backward()
             optimizer.step()
 
-            if step % 4 == 0 and batch_idx == 1:
-                batch_size = output_0e.shape[0]
-                for sample_idx in range(1):
-                    pred_0e = output_0e[sample_idx].detach().cpu().numpy()               # (out_dim,)
-                    pred_2e = output_2e[sample_idx].detach().cpu().numpy().T.reshape(-1)  # (5*out_dim,)
-                    pred = np.concatenate([pred_0e, pred_2e])  # shape: (6*out_dim,)
+            # if step % 4 == 0 and batch_idx == 1:
+            #     batch_size = output_0e.shape[0]
+            #     for sample_idx in range(1):
+            #         pred_0e = output_0e[sample_idx].detach().cpu().numpy()               # (out_dim,)
+            #         pred_2e = output_2e[sample_idx].detach().cpu().numpy().T.reshape(-1)  # (5*out_dim,)
+            #         pred = np.concatenate([pred_0e, pred_2e])  # shape: (6*out_dim,)
 
-                    target_0e = y_0e[sample_idx].detach().cpu().numpy()
-                    target_2e = y_2e[sample_idx].detach().cpu().numpy().T.reshape(-1)
-                    target = np.concatenate([target_0e, target_2e])
+            #         target_0e = y_0e[sample_idx].detach().cpu().numpy()
+            #         target_2e = y_2e[sample_idx].detach().cpu().numpy().T.reshape(-1)
+            #         target = np.concatenate([target_0e, target_2e])
 
-                    fig, ax = plt.subplots(figsize=(10, 8))
-                    ax.plot(target, label='Ground Truth', alpha=0.9, color = 'black')
-                    ax.plot(pred, label='Prediction', alpha=0.9, color = 'red')
-                    ax.set_title(f'Step {step} | Batch {batch_idx} | Sample {sample_idx}')
-                    ax.set_ylabel('Value')
-                    ax.legend()
+            #         fig, ax = plt.subplots(figsize=(10, 8))
+            #         ax.plot(target, label='Ground Truth', alpha=0.9, color = 'black')
+            #         ax.plot(pred, label='Prediction', alpha=0.9, color = 'red')
+            #         ax.set_title(f'Step {step} | Batch {batch_idx} | Sample {sample_idx}')
+            #         ax.set_ylabel('Value')
+            #         ax.legend()
 
-                    # Block boundaries and labels
-                    block_size = out_dim
-                    tick_positions = list(range(0, 6 * block_size, block_size))
-                    ax.set_xticks([])
+            #         # Block boundaries and labels
+            #         block_size = out_dim
+            #         tick_positions = list(range(0, 6 * block_size, block_size))
+            #         ax.set_xticks([])
 
-                    for x in tick_positions[1:]:
-                        ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
+            #         for x in tick_positions[1:]:
+            #             ax.axvline(x=x, color='gray', linestyle='--', linewidth=0.5, alpha=0.4)
 
-                    block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
-                    for i, label in enumerate(block_labels):
-                        center = tick_positions[i] + block_size / 2
-                        ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
-                                label, fontsize=24, ha='center', va='top', transform=ax.transData)
+            #         block_labels = [r'$Y^0_0$', r'$Y^2_{-2}$', r'$Y^2_{-1}$', r'$Y^2_{0}$', r'$Y^2_{1}$', r'$Y^2_{2}$']
+            #         for i, label in enumerate(block_labels):
+            #             center = tick_positions[i] + block_size / 2
+            #             ax.text(center, ax.get_ylim()[0] - 0.05 * (ax.get_ylim()[1] - ax.get_ylim()[0]),
+            #                     label, fontsize=24, ha='center', va='top', transform=ax.transData)
 
-                    fig.subplots_adjust(bottom=0.15)
-                    fig.tight_layout()
-                    fig.savefig(f'../pngs/pred_vs_gt_step{step}_batch{batch_idx}_sample{sample_idx}.png')
-                    plt.close(fig)
+            #         fig.subplots_adjust(bottom=0.15)
+            #         fig.tight_layout()
+            #         fig.savefig(f'../pngs/pred_vs_gt_step{step}_batch{batch_idx}_sample{sample_idx}.png')
+            #         plt.close(fig)
 
 
 
@@ -531,17 +485,6 @@ def train(model, optimizer, dataloader_train, dataloader_valid, loss_fn, loss_fn
         wall = end_time - start_time
 
         valid_avg_loss = evaluate(model, dataloader_valid, loss_fn_eval, loss_fn_mse_eval, device)
-        # valid_avg_loss = evaluate(
-        #     model, 
-        #     dataloader_valid, 
-        #     loss_fn_eval, 
-        #     loss_fn_mse_eval, 
-        #     device, 
-        #     step=step, 
-        #     save_dir="../pngs_eval", 
-        #     save_vis=(step % 5 == 0), 
-        #     max_vis_samples=16  # optional
-        # )
         train_avg_loss = evaluate(model, dataloader_train, loss_fn_eval, loss_fn_mse_eval, device)
 
         history.append({
