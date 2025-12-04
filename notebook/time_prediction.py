@@ -215,7 +215,7 @@ with open('../model/idx_valid_'+run_time+'.txt', 'r') as f: idx_valid = [int(i.s
 with open('../model/idx_test_'+run_time+'.txt', 'r') as f: idx_test = [int(i.split('\n')[0]) for i in f.readlines()]
 
 
-class PeriodicNetwork(Network):
+class Netwrapper(Network):
     def __init__(self, in_dim, em_dim , **kwargs):            
         # override the `reduce_output` keyword to instead perform an averge over atom contributions    
         self.pool = False
@@ -253,7 +253,7 @@ batch_size = 8
 layers = 4
 lr = 1e-2
 
-model = PeriodicNetwork(
+model = Netwrapper(
     in_dim=118,
     em_dim=em_dim,
     irreps_in=str(em_dim)+"x0e",
