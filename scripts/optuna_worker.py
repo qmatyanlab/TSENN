@@ -347,6 +347,7 @@ def objective(trial):
     wandb.finish()
 
     # === Evaluate on validation set ===
+    model.load_state_dict(torch.load('../model/'+trial_run_name + '.torch', map_location=device)['state'])
     cache = torch.load("../dataset/cached_preprocessed_data.pt")
     df = cache["df"]
 
