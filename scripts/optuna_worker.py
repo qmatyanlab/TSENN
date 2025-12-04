@@ -211,7 +211,7 @@ def evaluate_model(model, dataloader, df, column="rel_permittivity_imag_interp",
 
     return df, perc_below
 
-class PeriodicNetwork(Network):
+class Netwrapper(Network):
     def __init__(self, in_dim, em_dim, **kwargs):            
         # override the `reduce_output` keyword to instead perform an averge over atom contributions    
         self.pool = False
@@ -290,7 +290,7 @@ def objective(trial):
     scheduler_type = "cosine"  
 
     # === Construct Model ===
-    model = PeriodicNetwork(
+    model = Netwrapper(
         in_dim=118,
         em_dim=em_dim,
         irreps_in=f"{em_dim}x0e",
