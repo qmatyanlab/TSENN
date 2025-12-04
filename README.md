@@ -87,7 +87,7 @@ You can explore the pretrained model and visualize its results in the `notebook/
 
 ---
 
-## Citaion
+## Citation
 Feel free to cite or fork this repository for your own research.
 ```
 @misc{hsu2025accuratepredictionsequentialtensor,
