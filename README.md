@@ -12,6 +12,7 @@ This repository contains the source code and dataset for the **T**ensorial-**S**
   - [Dataset](#dataset)
   - [Example Usage](#example-usage)
   - [Pretrained Model \& Visualization](#pretrained-model--visualization)
+  - [Citation](#citation)
 
 ## Install Dependencies
 
@@ -86,6 +87,7 @@ You can explore the pretrained model and visualize its results in the `notebook/
 
 ---
 
+## Citaion
 Feel free to cite or fork this repository for your own research.
 ```
 @misc{hsu2025accuratepredictionsequentialtensor,
