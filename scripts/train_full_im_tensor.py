@@ -55,7 +55,7 @@ colors = dict(zip(datasets, palette))
 cmap = mpl.colors.LinearSegmentedColormap.from_list('cmap', [palette[k] for k in [0,2,1]])
 
 # Check device
-device = "cuda:3" if torch.cuda.is_available() else "cpu"
+device = "cuda" if torch.cuda.is_available() else "cpu"
 print('torch device:' , device)
 
 torch.manual_seed(3407)
@@ -105,13 +105,13 @@ scale_data = 1
 df['data'] = df.progress_apply(lambda x: build_data(x, 'sph_coefs', scale_data, type_onehot, mass_onehot, dipole_onehot, radius_onehot, type_encoding, r_max), axis=1)
 
 
-# run_time = time.strftime('%y%m%d', time.localtime())
-run_time = '250922'
+run_time = time.strftime('%y%m%d', time.localtime())
+# run_time = '250922'
 # # train/valid/test split
-# idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, seed=24, plot=True)
-# np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
-# np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
-# np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
+idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, seed=24, plot=True)
+np.savetxt('../model/idx_train_'+ run_time +'.txt', idx_train, fmt='%i', delimiter='\t')
+np.savetxt('../model/idx_valid_'+ run_time +'.txt', idx_valid, fmt='%i', delimiter='\t')
+np.savetxt('../model/idx_test_'+ run_time +'.txt', idx_test, fmt='%i', delimiter='\t')
 with open('../model/idx_train_'+run_time+'.txt', 'r') as f: idx_train = [int(i.split('\n')[0]) for i in f.readlines()]
 with open('../model/idx_valid_'+run_time+'.txt', 'r') as f: idx_valid = [int(i.split('\n')[0]) for i in f.readlines()]
 with open('../model/idx_test_'+run_time+'.txt', 'r') as f: idx_test = [int(i.split('\n')[0]) for i in f.readlines()]
