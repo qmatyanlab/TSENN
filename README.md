@@ -62,7 +62,7 @@ Each entry in the dataset corresponds to a material and includes:
 * `real part of dielectric tensor`
 * `imaginary part of dielectric tensor`
 
-The permittivity data is stored as a NumPy array of shape `(3001, 3, 3)`,
+The dielectric tensor data is stored as a NumPy array of shape `(3001, 3, 3)`,
 where `3001` corresponds to the number of photon energy points.
 Each tensor is a $3 \times 3$ matrix in Cartesian coordinates ($xx, xy, ..., zz$).
 
