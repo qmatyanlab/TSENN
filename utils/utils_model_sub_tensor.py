@@ -22,7 +22,7 @@ import numpy as np
 
 bar_format = '{l_bar}{bar:10}{r_bar}{bar:-10b}'
 # standard formatting for plots
-fontsize = 24
+fontsize = 16
 textsize = 16
 sub = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 plt.rcParams['font.family'] = 'Arial'

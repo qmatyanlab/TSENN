@@ -69,6 +69,7 @@ def get_neighbors(df, idx):
 # === get dataloaders and metadata ===
 def get_dataloaders_and_metadata():
     data_file = '../dataset/symmetrized_dataset_with_bandgap.pkl'
+    # data_file = '../dataset/auxiliary_dataset.pkl'
     df, species = load_data(data_file)
     df = df.reset_index(drop=True)
 
@@ -116,8 +117,6 @@ def get_dataloaders_and_metadata():
                                                         radius_onehot, type_encoding, r_max), axis=1)
 
     idx_train, idx_valid, idx_test = train_valid_test_split(df, valid_size=.1, test_size=.1, seed=12,  plot=False)
-    dataloader_train = tg.loader.DataLoader(df.iloc[idx_train]['data'].values, batch_size=4, shuffle=True)
-    dataloader_valid = tg.loader.DataLoader(df.iloc[idx_valid]['data'].values, batch_size=4)
     
     out_dim = len(df.iloc[0]['energies_interp'])
     torch.save({
@@ -131,9 +130,20 @@ def get_dataloaders_and_metadata():
     "r_max": r_max,
     "out_dim": out_dim
     }, "../dataset/cached_preprocessed_data.pt")
-
+    # torch.save({
+    # "df": df,
+    # "idx_train": idx_train,
+    # "idx_valid": idx_valid,
+    # "idx_test": idx_test,
+    # "scale_data": scale_data,
+    # "scale_0e": scale_0e.cpu().item(),
+    # "scale_2e": scale_2e.cpu().item(),
+    # "r_max": r_max,
+    # "out_dim": out_dim
+    # }, "../dataset/cached_auxiliary_preprocessed_data.pt")
 def get_dataloaders_from_cache(batch_size=4):
     cache = torch.load("../dataset/cached_preprocessed_data.pt")
+    cache = torch.load("../dataset/cached_auxiliary_preprocessed_data.pt")
 
     df = cache["df"]
     idx_train = cache["idx_train"]
@@ -341,14 +351,14 @@ def objective(trial):
         scheduler=scheduler,
         device=device,
         disable_tqdm=True,
-        # loss_balancer=None
         loss_balancer=loss_balancer
     )
     wandb.finish()
 
     # === Evaluate on validation set ===
-    model.load_state_dict(torch.load('../model/'+trial_run_name + '.torch', map_location=device)['state'])
+    model.load_state_dict(torch.load('../model/' + trial_run_name + '_best.torch', map_location=device)['state'])
     cache = torch.load("../dataset/cached_preprocessed_data.pt")
+    # cache = torch.load("../dataset/cached_auxiliary_preprocessed_data.pt")
     df = cache["df"]
 
     # Build a dataloader for the whole dataset
@@ -361,20 +371,7 @@ def objective(trial):
 
     # Optuna will MAXIMIZE % below threshold → set direction="maximize"
     return perc_below
-# # === Optuna Study w/ 1 GPU===
-# study = optuna.create_study(
-#     direction="minimize",
-#     study_name="tensor_spectrum_tuning"
-# )
-# study.optimize(objective, n_trials=30, timeout=None)
 
-# # Print best result
-# print("Best trial:")
-# best_trial = study.best_trial
-# print("  Value (validation loss):", best_trial.value)
-# print("  Params:")
-# for k, v in best_trial.params.items():
-#     print(f"    {k}: {v}")
 
 def main():
     import optuna
@@ -396,7 +393,8 @@ def main():
 
     # Load study
     study = optuna.load_study(study_name=study_name, storage=storage)
-    # study.optimize(objective, n_trials=15, timeout=None)
+    
+    study.optimize(objective, n_trials=15, timeout=None)
 
     print(f"Study '{study_name}' has {len(study.trials)} trials.")
 
@@ -410,21 +408,7 @@ def main():
         print(f"    {k}: {v}")
         
         
-    # ## Option 2: Create a new study
-    # try:
-    #     optuna.delete_study(study_name=study_name, storage=storage)
-    #     print(f"Deleted existing study: {study_name}")
-    # except KeyError:
-    #     print(f"No existing study named {study_name} to delete.")
-
-    # # Recreate fresh study
-    # study = optuna.create_study(
-    #     direction="minimize",
-    #     study_name=study_name,
-    #     storage=storage
-    # )    
-    # study.optimize(objective, n_trials=1, timeout=None)
-
+# GET DATASET!
 # def main():
 #     get_dataloaders_and_metadata()
 

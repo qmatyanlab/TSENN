@@ -208,7 +208,7 @@ trainable_params = sum(param.numel() for param in model.parameters() if param.re
 print(f"Total parameters: {total_params}")
 print(f"Trainable parameters: {trainable_params}")
 
-run_name = f'revision_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
+run_name = f'TSENN_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
 # run_name =  f'unconverged_TSENN-B_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}_mul_{mul}'
 max_iter = 100
 
