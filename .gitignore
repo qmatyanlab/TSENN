@@ -7,7 +7,7 @@ dataset.ipynb
 log/
 wandb/
 onehot_data/
-!dataset/symmetrized_dataset.pkl
+!dataset/auxiliary_dataset.pkl
 !dataset/symmetrized_dataset_with_bandgap.pkl
 !model/symmetrized_data_model_im_250424_for_paper_best.torch
 
