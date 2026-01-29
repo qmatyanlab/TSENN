@@ -52,7 +52,7 @@ The dataset used in our work is hosted on Figshare because Git LFS is disabled i
 Download and extract it with:
 
 ```bash
-python3 scripts/download_figshare.py --extract
+python scripts/download_figshare.py --extract
 ```
 
 After extraction, the dataset is located in the `dataset/` directory. An example of how to load
