@@ -4,6 +4,7 @@ All model checkpoints are stored on Zenodo because Git LFS is disabled in this r
 Download them from Zenodo and place them in the `model/` directory.
 
 Zenodo record: https://zenodo.org/records/18203976 -- still migrating due to internal issue of Zenodo
+
 Figshare: [10.6084/m9.figshare.31180054](https://doi.org/10.6084/m9.figshare.31180054)
 
 Models for main results:
