@@ -1,11 +1,12 @@
-# Pre-trained models
+# Pre-trained models (Figshare)
 
-All model checkpoints are stored on Zenodo because Git LFS is disabled in this repository.
-Download them from Zenodo and place them in the `model/` directory.
+All model checkpoints are stored on Figshare because Git LFS is disabled in this repository.
+Download them from Figshare and place them in the `model/` directory.
 
-Zenodo record: https://zenodo.org/records/18203976 -- still migrating due to internal issue of Zenodo
+Figshare DOI: https://doi.org/10.6084/m9.figshare.31180054
 
-Figshare: [10.6084/m9.figshare.31180054](https://doi.org/10.6084/m9.figshare.31180054)
+Download script:
+`python3 scripts/download_figshare.py --extract`
 
 Models for main results:
 - `revision_250909_Lmax_2_Lr_0.01_bs_8_em_128_layers_4_best.torch`

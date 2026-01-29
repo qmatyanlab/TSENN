@@ -120,7 +120,7 @@ device = "cuda:3" if torch.cuda.is_available() else "cpu"
 print('torch device:' , device)
 
 # Replace with your Materials Project API key
-API_KEY = "zckQao2291DWQRcIyq96cAwvZH9DAdTy"  # <----------------- PLEASE INSERT YOUR API KEY!!!!
+API_KEY = ""  # <----------------- PLEASE INSERT YOUR API KEY!!!!
 # MATERIAL_ID = "mp-2534"  # Example Material ID (e.g., GaAs)
 MATERIAL_ID = "mp-9538"
 # Step 1: Query the material by Material ID and get the structure
@@ -268,7 +268,6 @@ model = Netwrapper(
     dropout_prob=dropout_prob,
     use_batch_norm = use_batch_norm
 )
-# run_name = f'saved_test_{run_time}_Lmax={lmax}_Lr_0.01_with_individual_b'
 run_name = f'revision_{run_time}_Lmax_{lmax}_Lr_{lr}_bs_{batch_size}_em_{em_dim}_layers_{layers}'
 
 

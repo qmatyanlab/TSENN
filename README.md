@@ -48,9 +48,15 @@ To ensure all packages are installed, run the notebook at `notebook/full_tensor_
 
 ## Dataset
 
-The dataset used in our work is located in the `dataset/` directory.
-An example of how to load and use it is provided in:
-`notebook/full_tensor_train_data_prep.ipynb`
+The dataset used in our work is hosted on Figshare because Git LFS is disabled in this repository.
+Download and extract it with:
+
+```bash
+python3 scripts/download_figshare.py --extract
+```
+
+After extraction, the dataset is located in the `dataset/` directory. An example of how to load
+and use it is provided in: `notebook/full_tensor_train_data_prep.ipynb`.
 
 Each entry in the dataset corresponds to a material and includes:
 
@@ -80,6 +86,12 @@ This will begin training the full-tensor model using the default parameters.
 
 ## Pretrained Model & Visualization
 
+Pretrained model artifacts are hosted on Figshare. Download and extract them with:
+
+```bash
+python3 scripts/download_figshare.py --extract
+```
+
 You can explore the pretrained model and visualize its results in the `notebook/` directory:
 
 * `imaginary_part_prediction.ipynb`: demonstrates predictions using the pretrained model on curated datasets.
@@ -100,4 +112,3 @@ Feel free to cite or fork this repository for your own research.
       url={https://arxiv.org/abs/2505.04862}, 
 }
 ```
-
