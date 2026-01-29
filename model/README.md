@@ -8,6 +8,7 @@ Zenodo record: https://zenodo.org/records/18203976
 Models for main results:
 - `revision_250909_Lmax_2_Lr_0.01_bs_8_em_128_layers_4_best.torch`
 - `optuna_trial_27_best.torch`
+
 Model for auxiliary dataset:
 - `auxiliary_optuna_trial_5_em_dim_128_layers_3_mul_64_lmax_2_best.torch`
 
