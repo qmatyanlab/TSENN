@@ -1,4 +1,4 @@
-# Model artifacts (Zenodo)
+# Pre-trained models
 
 All model checkpoints are stored on Zenodo because Git LFS is disabled in this repository.
 Download them from Zenodo and place them in the `model/` directory.
