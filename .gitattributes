@@ -1,6 +1,0 @@
-model/revision_250909_Lmax_2_Lr_0.01_bs_8_em_128_layers_4_best.torch filter=lfs diff=lfs merge=lfs -text
-model/auxiliary_optuna_trial_5_em_dim_128_layers_3_mul_64_lmax_2_best.torch filter=lfs diff=lfs merge=lfs -text
-model/optuna_trial_27_best.torch filter=lfs diff=lfs merge=lfs -text
-model/*Lmax_2*_best.torch filter=lfs diff=lfs merge=lfs -text
-dataset/auxiliary_dataset.pkl filter=lfs diff=lfs merge=lfs -text
-dataset/symmetrized_dataset_with_bandgap.pkl filter=lfs diff=lfs merge=lfs -text

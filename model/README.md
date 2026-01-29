@@ -1,6 +1,6 @@
 # Model artifacts (Zenodo)
 
-The following model checkpoints are not stored in this repository to keep Git LFS usage low.
+All model checkpoints are stored on Zenodo because Git LFS is disabled in this repository.
 Download them from Zenodo and place them in the `model/` directory.
 
 Zenodo record: https://zenodo.org/records/18203976

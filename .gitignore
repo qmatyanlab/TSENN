@@ -2,14 +2,8 @@ block*
 *.pyc
 *.pkl
 *.torch
-dataset/cached_preprocessed_data.pt
+*.pt
 dataset.ipynb
-!model/*Lmax_2*_best.torch
-!model/optuna_trial_27_best.torch
-!model/revision_250909_Lmax_2_Lr_0.01_bs_8_em_128_layers_4_best.torch
-!model/auxiliary_optuna_trial_5_em_dim_128_layers_3_mul_64_lmax_2_best.torch
 log/
 wandb/
 onehot_data/
-!dataset/auxiliary_dataset.pkl
-!dataset/symmetrized_dataset_with_bandgap.pkl
