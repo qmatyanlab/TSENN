@@ -89,7 +89,7 @@ This will begin training the full-tensor model using the default parameters.
 Pretrained model artifacts are hosted on Figshare. Download and extract them with:
 
 ```bash
-python3 scripts/download_figshare.py --extract
+python scripts/download_figshare.py --extract
 ```
 
 You can explore the pretrained model and visualize its results in the `notebook/` directory:
