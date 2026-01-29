@@ -3,7 +3,10 @@
 All model checkpoints are stored on Figshare because Git LFS is disabled in this repository.
 Download them from Figshare and place them in the `model/` directory.
 
-Figshare DOI: https://doi.org/10.6084/m9.figshare.31180054
+Figshare DOI: [https://doi.org/10.6084/m9.figshare.31180054](https://doi.org/10.6084/m9.figshare.31180054)
+
+Zenodo DOI: [10.5281/zenodo.18203976](https://doi.org/10.5281/zenodo.18203976) -- some models are still migrating due to the upload issue of Zenodo
+
 
 Download script:
 `python3 scripts/download_figshare.py --extract`
